@@ -14,7 +14,7 @@ services:
       - ./logs:/app/logs
     # Если нужны порты
     # ports:
-    #   - "3000:3000"
+    #   - "80:81"
     networks:
       - meshtastic-network
 
@@ -27,7 +27,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=300  # Проверка каждые 5 минут
+      - WATCHTOWER_POLL_INTERVAL=600  # Проверка каждые 5 минут
       - WATCHTOWER_INCLUDE_STOPPED=true
     command: meshtastic-monitor
 
