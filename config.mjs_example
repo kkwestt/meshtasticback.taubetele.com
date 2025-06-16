@@ -1,0 +1,86 @@
+export const api = {
+  enable: false,
+  BOT_TOKEN: '0000:00000',
+  CHANNEL_ID: '00000'
+}
+
+export const servers = [
+
+  {
+    address: 'mqtt://meshdev:large4cats@mqtt.meshtastic.org',
+    name: 'mqtt.meshtastic.org',
+    type: 'mqtt'
+  }
+  // {
+
+  //     address: 'test.com:8000',
+  //     name: 'test.com',
+  //     type: 'protobuf',
+  // }
+]
+
+export const redisConfig = {
+  url: 'redis://localhost:6379',
+  ttl: 60 * 60 * 3 // 3 hours in seconds
+}
+
+const rules = {
+  position: {
+    latitudeI: {
+      type: 'number',
+      round: '0.1'
+    },
+    longitudeI: {
+      type: 'number',
+      round: '0.1'
+    },
+    altitude: {
+      type: 'number',
+      round: '0.1'
+    }
+  }
+}
+
+const commonValuesPaths = {
+  rxTime: 'rxTime',
+  channel: 'channel',
+  rxSnr: 'rxSnr',
+  hop: 'rxRssi',
+  rxRssi: 'rxRssi'
+}
+
+export const valuesPaths = {
+  user: {
+    ...commonValuesPaths,
+    id: 'data.id',
+    LName: 'data.longName',
+    SName: 'data.shortName',
+    hw: 'data.hwModel',
+    role: 'data.role'
+  },
+  deviceMetrics: {
+    batteryLevel: 'data.deviceMetrics.batteryLevel',
+    voltage: 'data.deviceMetrics.voltage',
+    channelUtilization: 'data.deviceMetrics.channelUtilization',
+    airUtilTx: 'data.deviceMetrics.airUtilTx'
+  },
+  telemetry: {
+    ...commonValuesPaths,
+    batL: 'data.deviceMetrics.batteryLevel',
+    volt: 'data.deviceMetrics.batteryLevel',
+    chUtil: 'data.deviceMetrics.batteryLevel',
+    airUtil: 'data.deviceMetrics.batteryLevel'
+  },
+  position: {
+    ...commonValuesPaths,
+    lat: 'data.latitudeI',
+    lon: 'data.longitudeI',
+    alt: 'data.altitude'
+  },
+  environmentMetrics: {
+    ...commonValuesPaths,
+    temp: 'data.environmentMetrics.temperature',
+    hum: 'data.environmentMetrics.relativeHumidity',
+    pres: 'data.environmentMetrics.barometricPressure'
+  }
+}

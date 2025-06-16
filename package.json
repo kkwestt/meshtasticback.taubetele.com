@@ -1,0 +1,46 @@
+{
+  "name": "meshtastic-monitor",
+  "version": "1.0.0",
+  "description": "Meshtastic network monitoring and telegram notification system",
+  "main": "index.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "nodemon index.mjs",
+    "lint": "eslint *.mjs",
+    "lint:fix": "eslint *.mjs --fix",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "meshtastic",
+    "mqtt",
+    "telegram",
+    "monitoring",
+    "iot"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@meshtastic/js": "2.3.4-0",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.18.2",
+    "lodash-es": "^4.17.21",
+    "mqtt": "4.3.7",
+    "redis": "^4.6.13",
+    "telegraf": "^4.15.3",
+    "tslib": "^2.6.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.1.1",
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
