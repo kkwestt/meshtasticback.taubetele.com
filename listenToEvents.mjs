@@ -244,7 +244,7 @@ const connectToMqtt = (server, callback) => {
 
 export const listenToEvents = async (serversConfig, callback) => {
   console.log(`Establishing ${serversConfig.length} server connections`)
-  console.log('Server configs:', serversConfig.map(s => ({ name: s.name, type: s.type, address: s.address })))
+  // console.log('Server configs:', serversConfig.map(s => ({ name: s.name, type: s.type, address: s.address })))
 
   const connections = []
   
