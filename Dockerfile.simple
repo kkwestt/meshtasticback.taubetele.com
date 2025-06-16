@@ -18,23 +18,29 @@ RUN npm install
 # Создаем директорию для логов
 RUN mkdir -p /app/logs
 
-# Простой скрипт запуска с автообновлением
-RUN echo '#!/bin/sh\n\
-echo "Starting Meshtastic Monitor on port 80..."\n\
-export PORT=80\n\
-while true; do\n\
-  echo "Checking for updates..."\n\
-  git fetch origin\n\
-  if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then\n\
-    echo "Updates found, pulling changes..."\n\
-    git pull origin main\n\
-    npm install\n\
-    echo "Restarting application..."\n\
-  fi\n\
-  \n\
-  echo "Starting node application on port 80..."\n\
-  timeout 300 node index.mjs || echo "App stopped, checking for updates..."\n\
-done' > /app/start.sh && chmod +x /app/start.sh
+# Создаем скрипт запуска
+RUN cat > /app/start.sh << 'EOF'
+#!/bin/sh
+echo "Starting Meshtastic Monitor on port 80..."
+export PORT=80
+
+while true; do
+  echo "Checking for updates..."
+  git fetch origin
+  if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+    echo "Updates found, pulling changes..."
+    git pull origin main
+    npm install
+    echo "Restarting application..."
+  fi
+
+  echo "Starting node application on port 80..."
+  timeout 300 node index.mjs || echo "App stopped, checking for updates..."
+done
+EOF
+
+# Делаем скрипт исполняемым
+RUN chmod +x /app/start.sh
 
 # Открываем порт 80
 EXPOSE 80
