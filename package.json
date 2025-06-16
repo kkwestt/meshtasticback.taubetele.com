@@ -21,7 +21,8 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "@meshtastic/js": "2.3.4-0",
+    "@jsr/meshtastic__core": "^2.6.4",
+    "@jsr/meshtastic__transport-http": "^0.2.1",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
