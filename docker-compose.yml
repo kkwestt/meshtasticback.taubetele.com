@@ -2,21 +2,40 @@ version: '3.8'
 
 services:
   meshtastic-monitor:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.fixed
     container_name: meshtastic-monitor
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Добавьте свои переменные окружения
+      # - TELEGRAM_BOT_TOKEN=your_token_here
+      # - TELEGRAM_CHAT_ID=your_chat_id_here
+      # - REDIS_PASSWORD=your_redis_password
     volumes:
-      # Монтируем конфиг файлы если нужно
-      - ./config:/app/config:ro
       # Логи
       - ./logs:/app/logs
-    # Если нужны порты
-    # ports:
-    #   - "80:81"
+      # Конфигурация (если нужно переопределить)
+      - ./config.mjs:/app/config.mjs:ro
+    depends_on:
+      - redis
     networks:
       - meshtastic-network
+
+  # Redis для хранения данных
+  redis:
+    image: redis:7-alpine
+    container_name: meshtastic-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - meshtastic-network
+    # Если нужен пароль для Redis
+    # command: redis-server --requirepass your_password_here
 
   # Watchtower для автоматического обновления образов
   watchtower:
@@ -27,9 +46,14 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=600  # Проверка каждые 5 минут
+      - WATCHTOWER_POLL_INTERVAL=300  # Проверка каждые 5 минут
       - WATCHTOWER_INCLUDE_STOPPED=true
     command: meshtastic-monitor
+    networks:
+      - meshtastic-network
+
+volumes:
+  redis-data:
 
 networks:
   meshtastic-network:
