@@ -1,0 +1,140 @@
+# Многоэтапная сборка для оптимизации размера
+FROM node:20-alpine AS builder
+
+# Устанавливаем git
+RUN apk add --no-cache git
+
+# Создаем рабочую директорию
+WORKDIR /app
+
+# Клонируем репозиторий
+RUN git clone https://github.com/kkwestt/meshtasticback.taubetele.com.git .
+
+# Устанавливаем только production зависимости
+RUN npm ci --only=production && npm cache clean --force
+
+# Финальный образ
+FROM node:20-alpine
+
+# Создаем пользователя для безопасности
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S meshtastic -u 1001
+
+# Устанавливаем git для обновлений
+RUN apk add --no-cache git curl
+
+# Создаем рабочую директорию
+WORKDIR /app
+
+# Копируем приложение из builder
+COPY --from=builder --chown=meshtastic:nodejs /app .
+
+# Создаем директории для логов
+RUN mkdir -p /app/logs && chown meshtastic:nodejs /app/logs
+
+# Создаем скрипт для проверки обновлений
+COPY --chown=meshtastic:nodejs <<EOF /app/check-updates.sh
+#!/bin/sh
+set -e
+
+echo "Checking for updates from GitHub..."
+
+# Получаем последний коммит из GitHub API
+LATEST_COMMIT=\$(curl -s "https://api.github.com/repos/kkwestt/meshtasticback.taubetele.com/commits/main" | grep '"sha"' | head -1 | cut -d'"' -f4)
+CURRENT_COMMIT=\$(git rev-parse HEAD)
+
+if [ "\$LATEST_COMMIT" != "\$CURRENT_COMMIT" ]; then
+    echo "New version available: \$LATEST_COMMIT"
+    echo "Current version: \$CURRENT_COMMIT"
+
+    # Создаем файл-флаг для перезапуска
+    touch /tmp/update-required
+
+    # Обновляем код
+    git fetch origin
+    git reset --hard origin/main
+
+    # Обновляем зависимости если изменился package.json
+    if git diff HEAD@{1} --name-only | grep -q "package.json"; then
+        echo "package.json changed, updating dependencies..."
+        npm ci --only=production
+    fi
+
+    echo "Update completed, restart required"
+else
+    echo "Already up to date"
+fi
+EOF
+
+RUN chmod +x /app/check-updates.sh
+
+# Создаем основной скрипт запуска
+COPY --chown=meshtastic:nodejs <<EOF /app/start.sh
+#!/bin/sh
+set -e
+
+echo "Starting Meshtastic Monitor..."
+
+# Функция для graceful shutdown
+cleanup() {
+    echo "Shutting down..."
+    kill \$APP_PID 2>/dev/null || true
+    wait \$APP_PID 2>/dev/null || true
+    exit 0
+}
+
+trap cleanup SIGTERM SIGINT
+
+# Запускаем приложение
+while true; do
+    echo "Starting application..."
+    node index.mjs &
+    APP_PID=\$!
+
+    # Ждем либо завершения приложения, либо сигнала обновления
+    while kill -0 \$APP_PID 2>/dev/null; do
+        # Проверяем обновления каждые 5 минут
+        sleep 300
+        /app/check-updates.sh
+
+        # Если требуется обновление, перезапускаем
+        if [ -f /tmp/update-required ]; then
+            echo "Restarting due to update..."
+            kill \$APP_PID 2>/dev/null || true
+            wait \$APP_PID 2>/dev/null || true
+            rm -f /tmp/update-required
+            break
+        fi
+    done
+
+    # Если приложение упало, ждем немного перед перезапуском
+    if ! kill -0 \$APP_PID 2>/dev/null; then
+        echo "Application crashed, restarting in 10 seconds..."
+        sleep 10
+    fi
+done
+EOF
+
+RUN chmod +x /app/start.sh
+
+# Создаем healthcheck скрипт
+COPY --chown=meshtastic:nodejs <<EOF /app/healthcheck.sh
+#!/bin/sh
+# Простая проверка что процесс запущен
+pgrep -f "node index.mjs" > /dev/null || exit 1
+EOF
+
+RUN chmod +x /app/healthcheck.sh
+
+# Переключаемся на непривилегированного пользователя
+USER meshtastic
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /app/healthcheck.sh
+
+# Открываем порт если нужен
+# EXPOSE 3000
+
+# Запускаем приложение
+CMD ["/app/start.sh"]
