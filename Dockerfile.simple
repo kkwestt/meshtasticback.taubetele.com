@@ -1,0 +1,43 @@
+FROM node:20-alpine
+
+# Устанавливаем git
+RUN apk add --no-cache git
+
+# Создаем рабочую директорию
+WORKDIR /app
+
+# Клонируем репозиторий
+RUN git clone https://github.com/kkwestt/meshtasticback.taubetele.com.git .
+
+# Копируем конфигурационный файл
+COPY config.mjs /app/config.mjs
+
+# Устанавливаем зависимости
+RUN npm install
+
+# Создаем директорию для логов
+RUN mkdir -p /app/logs
+
+# Простой скрипт запуска с автообновлением
+RUN echo '#!/bin/sh\n\
+echo "Starting Meshtastic Monitor on port 80..."\n\
+export PORT=80\n\
+while true; do\n\
+  echo "Checking for updates..."\n\
+  git fetch origin\n\
+  if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then\n\
+    echo "Updates found, pulling changes..."\n\
+    git pull origin main\n\
+    npm install\n\
+    echo "Restarting application..."\n\
+  fi\n\
+  \n\
+  echo "Starting node application on port 80..."\n\
+  timeout 300 node index.mjs || echo "App stopped, checking for updates..."\n\
+done' > /app/start.sh && chmod +x /app/start.sh
+
+# Открываем порт 80
+EXPOSE 80
+
+# Запускаем приложение
+CMD ["/app/start.sh"]
