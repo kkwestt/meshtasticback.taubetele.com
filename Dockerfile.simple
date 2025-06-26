@@ -9,6 +9,9 @@ WORKDIR /app
 # Клонируем репозиторий
 RUN git clone https://github.com/kkwestt/meshtasticback.taubetele.com.git .
 
+# ВАЖНО: Клонируем protobufs как требует приложение
+RUN git clone https://github.com/meshtastic/protobufs.git
+
 # Копируем конфигурационный файл
 COPY config.mjs /app/config.mjs
 
