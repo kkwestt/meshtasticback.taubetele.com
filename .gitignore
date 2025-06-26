@@ -150,3 +150,4 @@ telegram_old.mjs
 index_old.mjs
 listenToEvents_old.mjs
 getEventType_old.mjs
+protobufs/
