@@ -1,0 +1,43 @@
+{
+  "name": "meshtastic-mqtt-redis-client",
+  "version": "1.0.0",
+  "description": "Meshtastic MQTT client with Redis storage, HTTP API and Telegram bot (compatible with meshtasticback.taubetele.com)",
+  "main": "index.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "nodemon index.mjs",
+    "lint": "eslint *.js",
+    "lint:fix": "eslint *.js --fix"
+  },
+  "dependencies": {
+    "compression": "^1.8.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "ioredis": "^5.6.1",
+    "lodash-es": "^4.17.21",
+    "mqtt": "^5.13.1",
+    "protobufjs": "^7.2.5",
+    "redis": "^5.5.6",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "nodemon": "^3.0.0"
+  },
+  "keywords": [
+    "meshtastic",
+    "mqtt",
+    "redis",
+    "iot",
+    "mesh-network",
+    "http-api",
+    "telegram-bot",
+    "compatible"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
