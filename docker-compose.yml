@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  meshtastic-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
+    container_name: meshtastic-monitor
+    restart: unless-stopped
+    ports:
+      - "81:80"
+    environment:
+      - NODE_ENV=production
+      - PORT=80
+    volumes:
+      - ./logs:/app/logs
+      - ./config.mjs:/app/config.mjs:ro
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+    command: meshtastic-monitor
