@@ -63,11 +63,11 @@ const getHwModelName = (hwModel) => {
   const models = {
     1: "TLORA_V2",
     2: "TLORA_V1",
-    3: "TLORA_V2_1_1P6",
+    3: "TLORA V2.1 1.6",
     4: "TBEAM",
     5: "HELTEC_V2_0",
     6: "TBEAM_V0P7",
-    7: "T_ECHO",
+    7: "T-ECHO",
     8: "TLORA_V1_1P3",
     9: "RAK4631",
     10: "HELTEC_V2_1",
@@ -76,7 +76,7 @@ const getHwModelName = (hwModel) => {
     13: "RAK11200",
     14: "NANO_G1",
     15: "TLORA_V2_1_1P8",
-    16: "TLORA_T3_S3",
+    16: "TLORA T3 S3",
     17: "NANO_G1_EXPLORER",
     18: "NANO_G2_ULTRA",
     19: "HELTEC_V3",
@@ -938,6 +938,11 @@ export const handleTelegramMessage = async (
 
   // Проверяем топик - отправляем в Telegram только сообщения с топиком msh/msk/*
   if (!isAllowedTopic(fullTopic)) {
+    return;
+  }
+
+  if (event.type !== "broadcast") {
+    console.log(`🚫 Пропускаем ${event.type} сообщение для Telegram`);
     return;
   }
 

@@ -62,7 +62,7 @@ docker-compose down || true
 
 # Очищаем старые образы
 log "Cleaning up old images..."
-# docker image prune -f || true
+docker image prune -f || true
 
 # Собираем новый образ
 log "Building Docker image..."
