@@ -1,153 +1,337 @@
 import mqtt from "mqtt";
+import { shouldLogError, CONSTANTS } from "./utils.mjs";
 
-// Функция для фильтрации ошибок
-const shouldLogError = (errorMessage) => {
-    const suppressedErrors = [
-        'undefined',
-        'illegal tag',
-        'Error received for packet',
-        'NO_RESPONSE',
-        'TIMEOUT',
-        'NO_INTERFACE',
-        'MAX_RETRANSMIT',
-        'NO_CHANNEL',
-        'TOO_LARGE',
-        'NO_ACK',
-        'NOT_AUTHORIZED',
-        'invalid wire type',
-        'index out of range'
-    ];
-    return !suppressedErrors.some(error => errorMessage.includes(error));
-};
+const { RECONNECT_DELAY } = CONSTANTS;
 
+/**
+ * Оптимизированный MQTT Manager с улучшенной обработкой подключений
+ */
 export class MQTTManager {
-    constructor() {
-        this.connections = new Map();
-        this.messageHandler = null;
-        this.RECONNECT_DELAY = 5000;
+  constructor() {
+    this.connections = new Map();
+    this.messageHandler = null;
+    this.reconnectDelay = RECONNECT_DELAY;
+    this.maxRetries = 3;
+    this.connectionTimeout = 30000;
+    this.keepAliveInterval = 60;
+  }
+
+  /**
+   * Устанавливает обработчик сообщений
+   * @param {Function} handler - Функция обработки сообщений
+   */
+  setMessageHandler(handler) {
+    this.messageHandler = handler;
+  }
+
+  /**
+   * Подключается ко всем серверам параллельно
+   * @param {Array} servers - Массив серверов для подключения
+   */
+  async connectToAllServers(servers) {
+    console.log(`🚀 Подключение к ${servers.length} серверам...\n`);
+
+    // Параллельно подключаемся ко всем серверам
+    const connectionPromises = servers.map((server) =>
+      this.connectToServer(server)
+    );
+
+    // Ждем завершения всех подключений
+    const results = await Promise.allSettled(connectionPromises);
+
+    // Анализируем результаты
+    const successful = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected");
+
+    if (failed.length > 0) {
+      console.log(`⚠️ Ошибки подключения к ${failed.length} серверам:`);
+      failed.forEach((result, index) => {
+        console.log(`  - ${servers[index].name}: ${result.reason}`);
+      });
     }
 
-    setMessageHandler(handler) {
-        this.messageHandler = handler;
-    }
+    const connectedCount = Array.from(this.connections.values()).filter(
+      (conn) => conn.isConnected
+    ).length;
 
-    async connectToAllServers(servers) {
-        console.log(`🚀 Подключение к ${servers.length} серверам...\n`);
+    console.log(
+      `\n🌐 Подключено к ${connectedCount}/${servers.length} серверам`
+    );
+    console.log("🎧 Прослушивание сети Meshtastic со всех серверов...\n");
+    console.log("=".repeat(50));
 
-        // Подключаемся к каждому серверу
-        const connectionPromises = servers.map(server => this.connectToServer(server));
+    return { successful, failed: failed.length, total: servers.length };
+  }
 
-        // Ждем подключения ко всем серверам
-        await Promise.allSettled(connectionPromises);
+  /**
+   * Подключается к отдельному серверу
+   * @param {Object} server - Объект сервера
+   */
+  async connectToServer(server) {
+    return new Promise((resolve, reject) => {
+      console.log(`🔌 [${server.name}] Подключение...`);
 
-        const connectedCount = Array.from(this.connections.values())
-            .filter(conn => conn.isConnected).length;
+      const clientId = this.generateClientId(server.name);
+      const client = this.createMqttClient(server, clientId);
 
-        console.log(`\n🌐 Подключено к ${connectedCount}/${servers.length} серверам`);
-        console.log("🎧 Прослушивание сети Meshtastic со всех серверов...\n");
-        console.log("=" .repeat(50));
-    }
+      const connectionInfo = {
+        server,
+        client,
+        isConnected: false,
+        reconnectAttempts: 0,
+        topics: this.getTopicList(),
+        clientId,
+      };
 
-    async connectToServer(server) {
+      this.connections.set(server.name, connectionInfo);
+      this.setupClientEventHandlers(
+        client,
+        server,
+        connectionInfo,
+        resolve,
+        reject
+      );
+
+      // Таймаут для подключения
+      const timeout = setTimeout(() => {
+        if (!connectionInfo.isConnected) {
+          console.log(`⏰ [${server.name}] Таймаут подключения`);
+          reject(new Error(`Connection timeout for ${server.name}`));
+        }
+      }, this.connectionTimeout + 5000);
+
+      // Очищаем таймаут при успешном подключении
+      client.on("connect", () => {
+        clearTimeout(timeout);
+      });
+    });
+  }
+
+  /**
+   * Генерирует уникальный ID клиента
+   * @param {string} serverName - Имя сервера
+   * @returns {string} - Уникальный ID клиента
+   */
+  generateClientId(serverName) {
+    const cleanName = serverName.replace(/\./g, "_");
+    const randomId = Math.random().toString(16).substring(2, 8);
+    return `mqtt_${cleanName}_${randomId}`;
+  }
+
+  /**
+   * Создает MQTT клиент с оптимизированными настройками
+   * @param {Object} server - Объект сервера
+   * @param {string} clientId - ID клиента
+   * @returns {Object} - MQTT клиент
+   */
+  createMqttClient(server, clientId) {
+    return mqtt.connect(server.address, {
+      clientId,
+      reconnectPeriod: this.reconnectDelay,
+      connectTimeout: this.connectionTimeout,
+      keepalive: this.keepAliveInterval,
+      clean: true,
+      protocolVersion: 4,
+      qos: 0,
+      will: {
+        topic: `status/${clientId}`,
+        payload: "offline",
+        qos: 0,
+        retain: false,
+      },
+    });
+  }
+
+  /**
+   * Возвращает список топиков для подписки
+   * @returns {Array} - Массив топиков
+   */
+  getTopicList() {
+    return [
+      "msh/+/2/map/",
+      "msh/+/2/e/+/+",
+      "msh/+/+/2/map/",
+      "msh/+/+/2/e/+/+",
+      "msh/+/+/+/2/map/",
+      "msh/+/+/+/2/e/+/+",
+      "msh/+/+/+/+/2/map/",
+      "msh/+/+/+/+/2/e/+/+",
+    ];
+  }
+
+  /**
+   * Настраивает обработчики событий для MQTT клиента
+   * @param {Object} client - MQTT клиент
+   * @param {Object} server - Объект сервера
+   * @param {Object} connectionInfo - Информация о подключении
+   * @param {Function} resolve - Promise resolve
+   * @param {Function} reject - Promise reject
+   */
+  setupClientEventHandlers(client, server, connectionInfo, resolve, reject) {
+    client.on("connect", () => {
+      console.log(`✅ [${server.name}] Подключен`);
+      connectionInfo.isConnected = true;
+      connectionInfo.reconnectAttempts = 0;
+
+      this.subscribeToTopics(
+        client,
+        server,
+        connectionInfo.topics,
+        resolve,
+        reject
+      );
+    });
+
+    client.on("message", (topic, payload) => {
+      if (this.messageHandler) {
+        try {
+          this.messageHandler(server, topic, payload);
+        } catch (error) {
+          if (shouldLogError(error.message)) {
+            console.error(
+              `❌ [${server.name}] Ошибка обработки сообщения:`,
+              error.message
+            );
+          }
+        }
+      }
+    });
+
+    client.on("error", (error) => {
+      if (shouldLogError(error.message)) {
+        console.error(`❌ [${server.name}] MQTT ошибка:`, error.message);
+      }
+      connectionInfo.isConnected = false;
+
+      // Если это первое подключение, отклоняем промис
+      if (connectionInfo.reconnectAttempts === 0) {
+        reject(error);
+      }
+    });
+
+    client.on("close", () => {
+      connectionInfo.isConnected = false;
+      console.log(`🔌 [${server.name}] Соединение закрыто`);
+    });
+
+    client.on("offline", () => {
+      connectionInfo.isConnected = false;
+      console.log(`📴 [${server.name}] Оффлайн`);
+    });
+
+    client.on("reconnect", () => {
+      connectionInfo.reconnectAttempts++;
+      console.log(
+        `🔄 [${server.name}] Переподключение... (попытка ${connectionInfo.reconnectAttempts})`
+      );
+
+      if (connectionInfo.reconnectAttempts > this.maxRetries) {
+        console.log(
+          `❌ [${server.name}] Превышено максимальное количество попыток переподключения`
+        );
+        client.end();
+      }
+    });
+  }
+
+  /**
+   * Подписывается на топики
+   * @param {Object} client - MQTT клиент
+   * @param {Object} server - Объект сервера
+   * @param {Array} topics - Массив топиков
+   * @param {Function} resolve - Promise resolve
+   * @param {Function} reject - Promise reject
+   */
+  subscribeToTopics(client, server, topics, resolve, reject) {
+    client.subscribe(topics, (err) => {
+      if (!err) {
+        console.log(`📡 [${server.name}] Подписан на ${topics.length} топиков`);
+        resolve({ server, isConnected: true });
+      } else {
+        console.error(`❌ [${server.name}] Ошибка подписки:`, err.message);
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * Отключается от всех серверов
+   */
+  disconnect() {
+    console.log("\n👋 Отключение от всех серверов...");
+
+    const disconnectPromises = Array.from(this.connections.entries()).map(
+      ([serverName, connectionInfo]) => {
         return new Promise((resolve) => {
-            console.log(`🔌 [${server.name}] Подключение...`);
-
-            const clientId = `mqtt_${server.name.replace(/\./g, '_')}_${Math.random().toString(16).substr(2, 8)}`;
-
-            const client = mqtt.connect(server.address, {
-                clientId,
-                reconnectPeriod: this.RECONNECT_DELAY,
-                connectTimeout: 30000,
-                keepalive: 60
+          if (connectionInfo.client) {
+            connectionInfo.client.end(false, {}, () => {
+              console.log(`✅ [${serverName}] Отключен`);
+              resolve();
             });
-
-            // Топики для подписки
-            const topics = [
-                'msh/+/2/map/',
-                'msh/+/2/e/+/+',
-                'msh/+/+/2/map/',
-                'msh/+/+/2/e/+/+',
-                'msh/+/+/+/2/map/',
-                'msh/+/+/+/2/e/+/+',
-                'msh/+/+/+/+/2/map/',
-                'msh/+/+/+/+/2/e/+/+'
-            ];
-
-            const connectionInfo = {
-                server,
-                client,
-                isConnected: false,
-                reconnectAttempts: 0,
-                topics
-            };
-
-            this.connections.set(server.name, connectionInfo);
-
-            client.on('connect', () => {
-                console.log(`✅ [${server.name}] Подключен`);
-                connectionInfo.isConnected = true;
-                connectionInfo.reconnectAttempts = 0;
-
-                client.subscribe(topics, (err) => {
-                    if (!err) {
-                        console.log(`📡 [${server.name}] Подписан на топики`);
-                        resolve(connectionInfo);
-                    } else {
-                        console.error(`❌ [${server.name}] Ошибка подписки:`, err.message);
-                        resolve(connectionInfo);
-                    }
-                });
-            });
-
-            client.on('message', (topic, payload) => {
-                if (this.messageHandler) {
-                    this.messageHandler(server, topic, payload);
-                }
-            });
-
-            client.on('error', (error) => {
-                if (shouldLogError(error.message)) {
-                    console.error(`❌ [${server.name}] MQTT ошибка:`, error.message);
-                }
-                connectionInfo.isConnected = false;
-            });
-
-            client.on('close', () => {
-                connectionInfo.isConnected = false;
-            });
-
-            client.on('offline', () => {
-                connectionInfo.isConnected = false;
-            });
-
-            // Таймаут для подключения
-            setTimeout(() => {
-                if (!connectionInfo.isConnected) {
-                    resolve(connectionInfo);
-                }
-            }, 35000);
+          } else {
+            resolve();
+          }
         });
-    }
+      }
+    );
 
-    disconnect() {
-        console.log("\n👋 Отключение от всех серверов...");
-        this.connections.forEach((connectionInfo, serverName) => {
-            if (connectionInfo.client) {
-                connectionInfo.client.end();
-                console.log(`✅ [${serverName}] Отключен`);
-            }
-        });
-    }
+    return Promise.all(disconnectPromises);
+  }
 
-    getConnectedCount() {
-        return Array.from(this.connections.values())
-            .filter(conn => conn.isConnected).length;
-    }
+  /**
+   * Возвращает количество подключенных серверов
+   * @returns {number} - Количество подключенных серверов
+   */
+  getConnectedCount() {
+    return Array.from(this.connections.values()).filter(
+      (conn) => conn.isConnected
+    ).length;
+  }
 
-    isServerConnected(serverName) {
-        const connection = this.connections.get(serverName);
-        return connection ? connection.isConnected : false;
-    }
+  /**
+   * Проверяет подключение к серверу
+   * @param {string} serverName - Имя сервера
+   * @returns {boolean} - Статус подключения
+   */
+  isServerConnected(serverName) {
+    const connection = this.connections.get(serverName);
+    return connection ? connection.isConnected : false;
+  }
+
+  /**
+   * Возвращает статистику подключений
+   * @returns {Object} - Статистика подключений
+   */
+  getConnectionStats() {
+    const stats = {
+      total: this.connections.size,
+      connected: 0,
+      reconnecting: 0,
+      failed: 0,
+      servers: [],
+    };
+
+    this.connections.forEach((conn, name) => {
+      const serverStats = {
+        name,
+        connected: conn.isConnected,
+        reconnectAttempts: conn.reconnectAttempts,
+        clientId: conn.clientId,
+      };
+
+      if (conn.isConnected) {
+        stats.connected++;
+      } else if (conn.reconnectAttempts > 0) {
+        stats.reconnecting++;
+      } else {
+        stats.failed++;
+      }
+
+      stats.servers.push(serverStats);
+    });
+
+    return stats;
+  }
 }
 
 export default MQTTManager;

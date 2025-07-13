@@ -483,7 +483,7 @@ const formatDeviceStats = async (stats, redis) => {
       const alt = latestPos.altitude || null;
 
       if (lat && lon) {
-        message += `📍 <b>Координаты:</b> ${lat}, ${lon}\n`;
+        message += `📍 <b>Координаты:</b><a href="https://yandex.ru/maps/?ll=${lon},${lat}&z=15&pt=${lon},${lat},pm2rdm">${lat}, ${lon}</a>\n`;
       }
       if (alt && alt !== "N/A" && alt !== null && alt !== 0) {
         message += `🏔️ <b>Высота:</b> ${alt}м\n`;

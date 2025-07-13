@@ -1,0 +1,624 @@
+import Redis from "ioredis";
+import {
+  executeRedisPipeline,
+  createDeviceDataBatch,
+  filterExpiredDevices,
+  CONSTANTS,
+  getPortnumName,
+} from "./utils.mjs";
+
+const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
+  CONSTANTS;
+
+/**
+ * Оптимизированный Redis Manager с batch операциями и кэшированием
+ */
+export class RedisManager {
+  constructor(config) {
+    this.redis = new Redis(config);
+    this.cache = new Map();
+    this.cacheTimestamps = new Map();
+    this.cacheTTL = 30000; // 30 секунд
+    this.isQuerying = false;
+    this.queryLock = new Map();
+
+    this.setupEventHandlers();
+  }
+
+  /**
+   * Настраивает обработчики событий Redis
+   */
+  setupEventHandlers() {
+    this.redis.on("error", (err) => {
+      console.error("Redis Client Error:", err);
+    });
+
+    this.redis.on("connect", () => {
+      console.log("✅ Connected to Redis");
+    });
+
+    this.redis.on("reconnecting", () => {
+      console.log("🔄 Reconnecting to Redis...");
+    });
+  }
+
+  /**
+   * Проверяет подключение к Redis
+   */
+  async ping() {
+    return await this.redis.ping();
+  }
+
+  /**
+   * Получает все данные устройств с оптимизированным кэшированием
+   * @param {boolean} includeExpired - Включать ли истекшие устройства
+   * @returns {Object} - Данные устройств
+   */
+  async getAllDeviceData(includeExpired = false) {
+    const cacheKey = `devices_${includeExpired ? "with_expired" : "active"}`;
+
+    // Проверяем кэш
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    // Предотвращаем дублирование запросов
+    if (this.queryLock.has(cacheKey)) {
+      return await this.queryLock.get(cacheKey);
+    }
+
+    const queryPromise = this.performDeviceQuery(includeExpired);
+    this.queryLock.set(cacheKey, queryPromise);
+
+    try {
+      const result = await queryPromise;
+
+      // Кэшируем результат
+      this.cache.set(cacheKey, result);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return result;
+    } finally {
+      this.queryLock.delete(cacheKey);
+    }
+  }
+
+  /**
+   * Выполняет запрос данных устройств
+   * @param {boolean} includeExpired - Включать ли истекшие устройства
+   * @returns {Object} - Данные устройств
+   */
+  async performDeviceQuery(includeExpired) {
+    try {
+      // Получаем все ключи устройств
+      const keys = await this.redis.keys("device:*");
+
+      if (keys.length === 0) {
+        return {};
+      }
+
+      // Используем pipeline для batch операций
+      const operations = createDeviceDataBatch(keys);
+      const values = await executeRedisPipeline(this.redis, operations);
+
+      // Обрабатываем результаты
+      const result = {};
+      keys.forEach((key, index) => {
+        const deviceData = values[index];
+        if (!deviceData) return;
+
+        const { server, timestamp, ...rest } = deviceData;
+
+        // Фильтруем по сроку действия если нужно
+        if (!includeExpired) {
+          const isExpired =
+            Date.now() - new Date(timestamp).getTime() >= DEVICE_EXPIRY_TIME;
+          if (isExpired) return;
+        }
+
+        const data = { server, timestamp };
+        Object.entries(rest).forEach(([key, value]) => {
+          try {
+            data[key] = JSON.parse(value);
+          } catch {
+            data[key] = value;
+          }
+        });
+
+        const from = key.substring(7); // Remove "device:" prefix
+        result[from] = data;
+      });
+
+      return result;
+    } catch (error) {
+      console.error("Error querying device data:", error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Получает метаданные для устройства
+   * @param {string} deviceId - ID устройства
+   * @param {string} type - Тип метаданных
+   * @returns {Array} - Массив метаданных
+   */
+  async getDeviceMetadata(deviceId, type) {
+    const cacheKey = `metadata_${type}_${deviceId}`;
+
+    // Проверяем кэш
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      const data = await this.redis.lrange(
+        `${type}:${deviceId}`,
+        0,
+        MAX_METADATA_ITEMS_COUNT
+      );
+
+      const result = data
+        .map((item) => {
+          try {
+            return JSON.parse(item);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      // Кэшируем результат
+      this.cache.set(cacheKey, result);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return result;
+    } catch (error) {
+      console.error(
+        `Error querying metadata for ${type}:${deviceId}:`,
+        error.message
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Сохраняет данные устройства (СТАРАЯ СХЕМА)
+   * @param {string} key - Ключ Redis
+   * @param {Object} data - Данные для сохранения
+   */
+  async saveDeviceData(key, data) {
+    try {
+      // СТАРАЯ СХЕМА ХРАНЕНИЯ ДАННЫХ
+      await this.redis.hset(key, data);
+
+      // Инвалидируем кэш
+      this.invalidateDeviceCache();
+    } catch (error) {
+      console.error("Error saving device data:", error.message);
+    }
+  }
+
+  /**
+   * Сохраняет элемент с ограничением размера списка (СТАРАЯ СХЕМА)
+   * @param {string} key - Ключ Redis
+   * @param {number} serverTime - Время сервера
+   * @param {Object} newItem - Новый элемент
+   */
+  async upsertItem(key, serverTime, newItem) {
+    try {
+      // СТАРАЯ СХЕМА ХРАНЕНИЯ ДАННЫХ
+      // Получаем последний элемент для сравнения
+      const lastItems = await this.redis.lrange(key, -1, -1);
+      const [lastItemStr] = lastItems;
+
+      const isNewItem = !lastItemStr;
+      let isUpdated = false;
+
+      if (!isNewItem) {
+        try {
+          const { time, ...lastItem } = JSON.parse(lastItemStr);
+          isUpdated = this.hasItemChanged(newItem, lastItem);
+        } catch (error) {
+          console.error("Error parsing last item:", error.message);
+          isUpdated = true;
+        }
+      }
+
+      if (isNewItem || isUpdated) {
+        const pipeline = this.redis.pipeline();
+
+        // Добавляем новый элемент
+        pipeline.rpush(key, JSON.stringify({ time: serverTime, ...newItem }));
+
+        // Обрезаем список если нужно (только для не-device ключей)
+        if (!key.startsWith("device:")) {
+          pipeline.ltrim(key, -MAX_METADATA_ITEMS_COUNT, -1);
+        }
+
+        await pipeline.exec();
+
+        // Инвалидируем кэш метаданных
+        this.invalidateMetadataCache(key);
+      }
+    } catch (error) {
+      console.error("Error upserting item:", error.message);
+    }
+  }
+
+  /**
+   * Проверяет, изменился ли элемент
+   * @param {Object} newItem - Новый элемент
+   * @param {Object} lastItem - Последний элемент
+   * @returns {boolean} - Изменился ли элемент
+   */
+  hasItemChanged(newItem, lastItem) {
+    const changedFields = Object.keys(newItem).filter((key) => {
+      const newValue = newItem[key];
+      const lastValue = lastItem[key];
+
+      if (typeof newValue === "number" && typeof lastValue === "number") {
+        return newValue.toFixed(5) !== lastValue.toFixed(5);
+      }
+
+      return JSON.stringify(newValue) !== JSON.stringify(lastValue);
+    });
+
+    return changedFields.length > 0;
+  }
+
+  /**
+   * Получает данные пользователя
+   * @param {string} userId - ID пользователя
+   * @returns {Object} - Данные пользователя
+   */
+  async getUserData(userId) {
+    const cacheKey = `user_${userId}`;
+
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      const data = await this.redis.hgetall(`user:${userId}`);
+
+      // Кэшируем результат
+      this.cache.set(cacheKey, data);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return data;
+    } catch (error) {
+      console.error(`Error getting user data for ${userId}:`, error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Сохраняет данные пользователя
+   * @param {string} userId - ID пользователя
+   * @param {Object} userData - Данные пользователя
+   */
+  async saveUserData(userId, userData) {
+    try {
+      await this.redis.hset(`user:${userId}`, userData);
+
+      // Инвалидируем кэш пользователя
+      this.invalidateUserCache(userId);
+    } catch (error) {
+      console.error("Error saving user data:", error.message);
+    }
+  }
+
+  /**
+   * Сохраняет сообщение по portnum
+   * @param {number|string} portnum - Номер или название порта
+   * @param {string} deviceId - ID устройства
+   * @param {Object} messageData - Данные сообщения
+   */
+  async savePortnumMessage(portnum, deviceId, messageData) {
+    try {
+      const portnumName = getPortnumName(portnum);
+      if (!portnumName) {
+        console.log(
+          `⚠️ Неизвестный portnum: ${portnum}, пропускаем сохранение в новую схему`
+        );
+        return;
+      }
+
+      const key = `${portnumName}:${deviceId}`;
+      const messageWithTimestamp = {
+        timestamp: Date.now(),
+        ...messageData,
+      };
+
+      // Добавляем сообщение в список
+      await this.redis.rpush(key, JSON.stringify(messageWithTimestamp));
+
+      // Обрезаем до последних MAX_PORTNUM_MESSAGES сообщений
+      await this.redis.ltrim(key, -MAX_PORTNUM_MESSAGES, -1);
+
+      // Инвалидируем кэш для этого типа сообщений
+      this.invalidatePortnumCache(portnumName, deviceId);
+
+      // console.log(
+      //   `💾 Сохранено в ${key}: ${JSON.stringify(messageData).substring(
+      //     0,
+      //     200
+      //   )}...`
+      // );
+    } catch (error) {
+      console.error("Error saving portnum message:", error.message);
+    }
+  }
+
+  /**
+   * Получает сообщения по portnum для устройства
+   * @param {string} portnumName - Название портa
+   * @param {string} deviceId - ID устройства
+   * @param {number} limit - Лимит сообщений (по умолчанию все)
+   * @returns {Array} - Массив сообщений
+   */
+  async getPortnumMessages(
+    portnumName,
+    deviceId,
+    limit = MAX_PORTNUM_MESSAGES
+  ) {
+    const cacheKey = `portnum_${portnumName}_${deviceId}`;
+
+    // Проверяем кэш
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      const key = `${portnumName}:${deviceId}`;
+      const data = await this.redis.lrange(key, -limit, -1);
+
+      const result = data
+        .map((item) => {
+          try {
+            return JSON.parse(item);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .reverse(); // Возвращаем в порядке от новых к старым
+
+      // Кэшируем результат
+      this.cache.set(cacheKey, result);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return result;
+    } catch (error) {
+      console.error(
+        `Error getting portnum messages for ${portnumName}:${deviceId}:`,
+        error.message
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Получает все сообщения определенного типа
+   * @param {string} portnumName - Название портa
+   * @returns {Object} - Объект с данными по устройствам
+   */
+  async getAllPortnumMessages(portnumName) {
+    try {
+      const pattern = `${portnumName}:*`;
+      const keys = await this.redis.keys(pattern);
+
+      if (keys.length === 0) {
+        return {};
+      }
+
+      // Получаем данные для всех ключей параллельно
+      const operations = keys.map((key) => ({
+        command: "lrange",
+        args: [key, -MAX_PORTNUM_MESSAGES, -1],
+      }));
+
+      const results = await executeRedisPipeline(this.redis, operations);
+
+      const allMessages = {};
+      keys.forEach((key, index) => {
+        const deviceId = key.split(":")[1];
+        const messages = results[index]
+          .map((item) => {
+            try {
+              return JSON.parse(item);
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean)
+          .reverse(); // От новых к старым
+
+        if (messages.length > 0) {
+          allMessages[deviceId] = messages;
+        }
+      });
+
+      return allMessages;
+    } catch (error) {
+      console.error(
+        `Error getting all portnum messages for ${portnumName}:`,
+        error.message
+      );
+      return {};
+    }
+  }
+
+  /**
+   * Получает статистику по portnum
+   * @returns {Object} - Статистика по типам сообщений
+   */
+  async getPortnumStats() {
+    try {
+      const stats = {};
+      const portnumNames = [
+        "TEXT_MESSAGE_APP",
+        "POSITION_APP",
+        "NODEINFO_APP",
+        "TELEMETRY_APP",
+        "NEIGHBORINFO_APP",
+        "WAYPOINT_APP",
+        "MAP_REPORT_APP",
+        "TRACEROUTE_APP",
+      ];
+
+      for (const portnumName of portnumNames) {
+        const pattern = `${portnumName}:*`;
+        const keys = await this.redis.keys(pattern);
+
+        stats[portnumName] = {
+          deviceCount: keys.length,
+          totalMessages: 0,
+        };
+
+        if (keys.length > 0) {
+          // Подсчитываем общее количество сообщений
+          const operations = keys.map((key) => ({
+            command: "llen",
+            args: [key],
+          }));
+
+          const lengths = await executeRedisPipeline(this.redis, operations);
+          stats[portnumName].totalMessages = lengths.reduce(
+            (sum, len) => sum + len,
+            0
+          );
+        }
+      }
+
+      return stats;
+    } catch (error) {
+      console.error("Error getting portnum stats:", error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Проверяет валидность кэша
+   * @param {string} key - Ключ кэша
+   * @returns {boolean} - Валидность кэша
+   */
+  isCacheValid(key) {
+    if (!this.cache.has(key)) return false;
+
+    const timestamp = this.cacheTimestamps.get(key);
+    return timestamp && Date.now() - timestamp < this.cacheTTL;
+  }
+
+  /**
+   * Инвалидирует кэш устройств
+   */
+  invalidateDeviceCache() {
+    const keysToDelete = Array.from(this.cache.keys()).filter((key) =>
+      key.startsWith("devices_")
+    );
+
+    keysToDelete.forEach((key) => {
+      this.cache.delete(key);
+      this.cacheTimestamps.delete(key);
+    });
+  }
+
+  /**
+   * Инвалидирует кэш метаданных
+   * @param {string} metadataKey - Ключ метаданных
+   */
+  invalidateMetadataCache(metadataKey) {
+    const [type, deviceId] = metadataKey.split(":");
+    const cacheKey = `metadata_${type}_${deviceId}`;
+
+    this.cache.delete(cacheKey);
+    this.cacheTimestamps.delete(cacheKey);
+  }
+
+  /**
+   * Инвалидирует кэш пользователя
+   * @param {string} userId - ID пользователя
+   */
+  invalidateUserCache(userId) {
+    const cacheKey = `user_${userId}`;
+    this.cache.delete(cacheKey);
+    this.cacheTimestamps.delete(cacheKey);
+  }
+
+  /**
+   * Инвалидирует кэш для portnum сообщений
+   * @param {string} portnumName - Название портa
+   * @param {string} deviceId - ID устройства
+   */
+  invalidatePortnumCache(portnumName, deviceId) {
+    const cacheKey = `portnum_${portnumName}_${deviceId}`;
+    this.cache.delete(cacheKey);
+    this.cacheTimestamps.delete(cacheKey);
+  }
+
+  /**
+   * Очищает весь кэш (включая новые ключи portnum)
+   */
+  clearCache() {
+    this.cache.clear();
+    this.cacheTimestamps.clear();
+  }
+
+  /**
+   * Получает статистику кэша
+   * @returns {Object} - Статистика кэша
+   */
+  getCacheStats() {
+    const now = Date.now();
+    const validEntries = Array.from(this.cacheTimestamps.entries()).filter(
+      ([_, timestamp]) => now - timestamp < this.cacheTTL
+    );
+
+    return {
+      totalEntries: this.cache.size,
+      validEntries: validEntries.length,
+      expiredEntries: this.cache.size - validEntries.length,
+      memoryUsage: this.cache.size * 100, // Примерная оценка
+    };
+  }
+
+  /**
+   * Периодически очищает истекший кэш
+   */
+  startCacheCleanup() {
+    setInterval(() => {
+      const now = Date.now();
+      const keysToDelete = [];
+
+      this.cacheTimestamps.forEach((timestamp, key) => {
+        if (now - timestamp >= this.cacheTTL) {
+          keysToDelete.push(key);
+        }
+      });
+
+      keysToDelete.forEach((key) => {
+        this.cache.delete(key);
+        this.cacheTimestamps.delete(key);
+      });
+
+      if (keysToDelete.length > 0) {
+        console.log(`🗑️ Очищено ${keysToDelete.length} истекших записей кэша`);
+      }
+    }, 60000); // Каждую минуту
+  }
+
+  /**
+   * Отключается от Redis
+   */
+  async disconnect() {
+    try {
+      await this.redis.quit();
+      console.log("✅ Redis отключен");
+    } catch (error) {
+      console.error("Error disconnecting from Redis:", error.message);
+    }
+  }
+}
+
+export default RedisManager;
