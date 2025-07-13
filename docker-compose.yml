@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  meshtastic-monitor:
+  meshtasticback_taubetele_com_81:
     build:
       context: .
       dockerfile: Dockerfile

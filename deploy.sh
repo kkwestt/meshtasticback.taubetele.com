@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Deploying Meshtastic Monitor..."
+echo "🚀 Deploying meshtasticback_taubetele_com_81..."
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -85,16 +85,16 @@ if docker-compose ps | grep -q "Up"; then
     docker-compose ps
 
     info "📋 Useful commands:"
-    echo "  View logs: docker-compose logs -f meshtastic-monitor"
+    echo "  View logs: docker-compose logs -f meshtasticback_taubetele_com_81"
     echo "  View all logs: docker-compose logs -f"
     echo "  Restart: docker-compose restart"
     echo "  Stop: docker-compose down"
     echo "  Update: ./deploy.sh"
-    echo "  Shell access: docker exec -it meshtastic-monitor sh"
+    echo "  Shell access: docker exec -it meshtasticback_taubetele_com_81 sh"
 
     # Проверяем здоровье контейнера
     sleep 5
-    HEALTH=$(docker inspect --format='{{.State.Health.Status}}' meshtastic-monitor 2>/dev/null || echo "no-healthcheck")
+    HEALTH=$(docker inspect --format='{{.State.Health.Status}}' meshtasticback_taubetele_com_81 2>/dev/null || echo "no-healthcheck")
     if [ "$HEALTH" = "healthy" ]; then
         log "🟢 Container is healthy"
     elif [ "$HEALTH" = "starting" ]; then
@@ -109,7 +109,7 @@ fi
 
 # Показываем логи
 log "Recent logs:"
-docker-compose logs --tail=30 meshtastic-monitor
+docker-compose logs --tail=30 meshtasticback_taubetele_com_81
 
 log "🎉 Deployment completed!"
-info "Monitor logs with: docker-compose logs -f meshtastic-monitor"
+info "Monitor logs with: docker-compose logs -f meshtasticback_taubetele_com_81"
