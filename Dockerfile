@@ -26,10 +26,10 @@ RUN mkdir -p /app/logs && chown -R meshtastic:nodejs /app
 USER meshtastic
 
 # Открываем порт 80
-EXPOSE 80
+EXPOSE 3000
 
 # Устанавливаем переменную окружения для порта
-ENV PORT=80
+ENV PORT=3000
 
 # Запускаем приложение
 CMD ["node", "index.mjs"]

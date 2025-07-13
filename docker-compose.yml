@@ -8,10 +8,10 @@ services:
     container_name: meshtasticback_taubetele_com_81
     restart: unless-stopped
     ports:
-      - "81:80"
+      - "81:3000"
     environment:
       - NODE_ENV=production
-      - PORT=80
+      - PORT=3000
     volumes:
       - ./logs:/app/logs
       - ./config.mjs:/app/config.mjs:ro
