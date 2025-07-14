@@ -245,7 +245,6 @@ const getDeviceStats = async (redis, deviceId) => {
       position: safeJsonParse(deviceData.position),
       deviceMetrics: safeJsonParse(deviceData.deviceMetrics),
       environmentMetrics: safeJsonParse(deviceData.environmentMetrics),
-      lastSeen: deviceData.timestamp ? new Date(deviceData.timestamp) : null,
       server: deviceData.server || "Unknown",
       userData,
       gpsHistory: parseData(gpsData),
@@ -269,7 +268,6 @@ const formatDeviceStats = async (stats, redis) => {
     position,
     deviceMetrics,
     environmentMetrics,
-    lastSeen,
     server,
     userData,
     gpsHistory,
@@ -632,13 +630,6 @@ const formatDeviceStats = async (stats, redis) => {
   }
 
   message += `\n🌐 <b>MQTT:</b> ${escapeHtml(server)}\n`;
-  if (lastSeen) {
-    const lastActivity = formatTimeAgo(lastSeen);
-    if (lastActivity) {
-      message += `⏰ <b>Последняя активность:</b> ${lastActivity}\n`;
-    }
-  }
-
   return message;
 };
 
