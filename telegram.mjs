@@ -3,6 +3,23 @@ import { botSettings } from "./config.mjs";
 
 const MESSAGE_GROUP_TIMEOUT = 7000;
 
+// Helper function to format hop count
+const formatHopCount = (hop) => {
+  if (hop === null || hop === undefined || hop === "N/A") {
+    return null;
+  }
+
+  const hopValue = typeof hop === "string" ? parseInt(hop, 10) : hop;
+
+  if (hopValue === 7) {
+    return "direct";
+  } else if (hopValue >= 0 && hopValue < 7) {
+    return `${7 - hopValue} Hop`;
+  }
+
+  return hop; // fallback for unexpected values
+};
+
 let bot = null;
 if (botSettings.ENABLE && botSettings.BOT_TOKEN) {
   bot = new Telegraf(botSettings.BOT_TOKEN);
@@ -322,8 +339,9 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🛰️ <b>NodeInfo RX:</b> ${escapeHtml(
           gatewayInfo.longName
         )} (${escapeHtml(gatewayInfo.idHex)}) `;
-        if (nodeHop && nodeHop !== "N/A" && nodeHop !== null) {
-          message += `Hop: ${nodeHop} `;
+        const formattedNodeHop = formatHopCount(nodeHop);
+        if (formattedNodeHop) {
+          message += `${formattedNodeHop} `;
         }
         message += `RSSI/SNR: ${nodeRxRssi}/${nodeRxSnr}`;
         if (nodeTimestamp) {
@@ -379,12 +397,9 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🛰️ <b>Message RX:</b> ${escapeHtml(
           gatewayInfo.longName
         )} (${escapeHtml(gatewayInfo.idHex)}) `;
-        if (
-          lastMsg.hopLimit &&
-          lastMsg.hopLimit !== "N/A" &&
-          lastMsg.hopLimit !== null
-        ) {
-          message += `Hop: ${lastMsg.hopLimit} `;
+        const formattedLastMsgHop = formatHopCount(lastMsg.hopLimit);
+        if (formattedLastMsgHop) {
+          message += `${formattedLastMsgHop} `;
         }
         message += `RSSI/SNR: ${lastMsg.rxRssi}/${lastMsg.rxSnr}`;
         if (lastMsg.serverTime || lastMsg.timestamp || lastMsg.rxTime) {
@@ -433,8 +448,9 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🛰️ <b>GPS RX:</b> ${escapeHtml(
           gatewayInfo.longName
         )} (${escapeHtml(gatewayInfo.idHex)}) `;
-        if (posHop && posHop !== "N/A" && posHop !== null) {
-          message += `Hop: ${posHop} `;
+        const formattedPosHop = formatHopCount(posHop);
+        if (formattedPosHop) {
+          message += `${formattedPosHop} `;
         }
         message += `RSSI/SNR: ${posRxRssi}/${posRxSnr}`;
         if (posTimestamp) {
@@ -480,8 +496,9 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🛰️ <b>Telemetry RX:</b> ${escapeHtml(
           gatewayInfo.longName
         )} (${escapeHtml(gatewayInfo.idHex)}) `;
-        if (devHop && devHop !== "N/A" && devHop !== null) {
-          message += `Hop: ${devHop} `;
+        const formattedDevHop = formatHopCount(devHop);
+        if (formattedDevHop) {
+          message += `${formattedDevHop} `;
         }
         message += `RSSI/SNR: ${devRxRssi}/${devRxSnr}`;
         if (devTimestamp) {
@@ -526,8 +543,9 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🛰️ <b>Environment RX:</b> ${escapeHtml(
           gatewayInfo.longName
         )} (${escapeHtml(gatewayInfo.idHex)}) `;
-        if (envHop && envHop !== "N/A" && envHop !== null) {
-          message += `Hop: ${envHop} `;
+        const formattedEnvHop = formatHopCount(envHop);
+        if (formattedEnvHop) {
+          message += `${formattedEnvHop} `;
         }
         message += `RSSI/SNR: ${envRxRssi}/${envRxSnr}`;
         if (envTimestamp) {
@@ -584,7 +602,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       }
     }
 
-    let message = `💬 <b>Msg:</b> "${escapeHtml(messageText)}"`;
+    let message = `💬 <b>Msg:</b> ${escapeHtml(messageText)}`;
 
     // Get sender info using event.from (actual sender), not event.gatewayId (receiver gateway)
     const senderId = event.from
@@ -605,25 +623,24 @@ const sendGroupedMessage = async (redis, messageId) => {
       message += `\n👤 <b>От:</b> Unknown (${escapeHtml(senderId)})`;
     }
 
-    if (gateways.length > 1) {
-      message += `\n📡 <b>Получено шлюзами (${gateways.length}):</b>\n`;
-      gateways.forEach(([gatewayId, info]) => {
-        const gateway = gatewayInfoMap[gatewayId];
-        message += `• ${escapeHtml(
-          gateway?.longName || "Unknown"
-        )} (${escapeHtml(gatewayId)})`;
+    message += `\n📡 <b>Получено шлюзами (${gateways.length}):</b>\n`;
+    gateways.forEach(([gatewayId, info]) => {
+      const gateway = gatewayInfoMap[gatewayId];
+      message += `• ${escapeHtml(gateway?.longName || "Unknown")} (${escapeHtml(
+        gatewayId
+      )})`;
 
-        // Check if RSSI or SNR is 0, then show MQTT instead of values
-        if (info.rxRssi === 0 || info.rxSnr === 0) {
-          message += ` MQTT`;
-        } else {
-          if (info.rxRssi !== undefined) message += ` ${info.rxRssi}dBm`;
-          if (info.rxSnr !== undefined) message += `/${info.rxSnr}SNR`;
-          if (info.hopLimit !== undefined) message += `/${info.hopLimit}hop`;
-        }
-        message += `\n`;
-      });
-    }
+      // Check if RSSI or SNR is 0, then show MQTT instead of values
+      if (info.rxRssi === 0 || info.rxSnr === 0) {
+        message += ` MQTT`;
+      } else {
+        if (info.rxRssi !== undefined) message += ` ${info.rxRssi}dBm`;
+        if (info.rxSnr !== undefined) message += `/${info.rxSnr}SNR`;
+        const formattedHop = formatHopCount(info.hopLimit);
+        if (formattedHop) message += `/${formattedHop}`;
+      }
+      message += `\n`;
+    });
 
     await sendTelegramMessage(message);
     console.log(`Telegram message sent successfully for group ${messageId}`);
