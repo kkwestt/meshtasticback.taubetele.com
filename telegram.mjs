@@ -561,7 +561,6 @@ const formatDeviceStats = async (stats, redis) => {
         if (devTimestamp) {
           message += ` ${formatTimeAgo(devTimestamp)}`;
         }
-        message += `\n`;
       }
     }
     message += `\n`;
