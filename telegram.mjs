@@ -1,7 +1,7 @@
 import { Telegraf } from "telegraf";
 import { botSettings } from "./config.mjs";
 
-const MESSAGE_GROUP_TIMEOUT = 7000;
+const MESSAGE_GROUP_TIMEOUT = 8000;
 
 // Helper function to format hop count
 const formatHopCount = (hop) => {
@@ -12,7 +12,7 @@ const formatHopCount = (hop) => {
   const hopValue = typeof hop === "string" ? parseInt(hop, 10) : hop;
 
   if (hopValue === 7) {
-    return "direct";
+    return "Direct";
   } else if (hopValue >= 0 && hopValue < 7) {
     return `${7 - hopValue} Hop`;
   }
@@ -455,7 +455,6 @@ const formatDeviceStats = async (stats, redis) => {
       const latitudeI = gpsData.latitudeI || gpsData.latitude_i;
       const longitudeI = gpsData.longitudeI || gpsData.longitude_i;
       const altitude = gpsData.altitude;
-      const time = gpsData.time;
 
       if (latitudeI !== undefined && longitudeI !== undefined) {
         const lat = (latitudeI / 1e7).toFixed(6);
@@ -463,10 +462,6 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🌍 <b>Координаты:</b> <a href="https://yandex.ru/maps/?ll=${lon},${lat}&z=15&pt=${lon},${lat},pm2rdm">${lat}, ${lon}</a>\n`;
         if (altitude !== undefined && altitude !== 0)
           message += `🏔️ <b>Высота:</b> ${altitude} м\n`;
-        if (time) {
-          const gpsTime = formatTimeAgo(time * 1000); // GPS time is in seconds
-          if (gpsTime) message += `⏰ <b>GPS время:</b> ${gpsTime}\n`;
-        }
       }
     }
 
@@ -638,7 +633,7 @@ const formatDeviceStats = async (stats, redis) => {
     message += `\n`;
   }
 
-  message += `\n🌐 <b>Сервер:</b> ${escapeHtml(server)}\n`;
+  message += `\n🌐 <b>MQTT:</b> ${escapeHtml(server)}\n`;
   if (lastSeen)
     message += `⏰ <b>Последняя активность:</b> ${formatTimeAgo(lastSeen)}\n`;
 
