@@ -407,13 +407,13 @@ const formatDeviceStats = async (stats, redis) => {
       }
 
       message += `📝 ${escapeHtml(messageText)} ${timeAgo}\n`;
-    //   if (gateway) {
-    //     const gatewayIdForUrl = msg.gatewayId ? msg.gatewayId.substring(1) : "";
-    //     message += `📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
-    //       msg.gatewayId
-    //     )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gatewayIdForUrl}">📊</a>\n`;
-    //   }
-    // });
+      // if (gateway) {
+      //   const gatewayIdForUrl = msg.gatewayId ? msg.gatewayId.substring(1) : "";
+      //   message += `📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
+      //     msg.gatewayId
+      //   )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gatewayIdForUrl}">📊</a>\n`;
+      // }
+    });
 
     // Add Message RX information
     const lastMsg = lastMessages[lastMessages.length - 1];
