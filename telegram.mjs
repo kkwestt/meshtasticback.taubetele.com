@@ -318,7 +318,8 @@ const formatDeviceStats = async (stats, redis) => {
   message += `👤 <b>Имя:</b> ${escapeHtml(longName)} (${escapeHtml(
     shortName
   )})\n`;
-  message += `🆔 <b>ID:</b> ${escapeHtml(deviceId)}\n`;
+  const userFrom = user?.from || userData?.from || stats.numericId;
+  message += `🆔 <b>ID:</b> ${escapeHtml(userFrom)}\n`;
   message += `🔧 <b>Модель:</b> ${escapeHtml(getHwModelName(hwModel))}\n`;
   message += `⚡ <b>Роль:</b> ${escapeHtml(getRoleName(role))}\n`;
 
