@@ -566,10 +566,25 @@ const sendGroupedMessage = async (redis, messageId) => {
     const gatewayIds = gateways.map(([id]) => id);
     const gatewayInfoMap = await getGatewayInfoBatch(redis, gatewayIds);
 
-    // Build message
-    let message = `💬 <b>Сообщение:</b> "${escapeHtml(
-      event.data?.text || "N/A"
-    )}"`;
+    // Build message - try different ways to get message text
+    let messageText = "N/A";
+    if (typeof event.data === "string") {
+      messageText = event.data;
+    } else if (event.data?.text) {
+      messageText = event.data.text;
+    } else if (event.text) {
+      messageText = event.text;
+    } else if (event.data?.payload) {
+      // Try to decode payload as text
+      try {
+        const payloadBuffer = Buffer.from(event.data.payload, "base64");
+        messageText = payloadBuffer.toString("utf8");
+      } catch (error) {
+        console.error("Error decoding message payload:", error.message);
+      }
+    }
+
+    let message = `💬 <b>Сообщение:</b> "${escapeHtml(messageText)}"`;
 
     const fromGateway = gatewayInfoMap[event.gatewayId];
     if (fromGateway) {
@@ -585,9 +600,15 @@ const sendGroupedMessage = async (redis, messageId) => {
         message += `• ${escapeHtml(
           gateway?.longName || "Unknown"
         )} (${escapeHtml(gatewayId)})`;
-        if (info.rxRssi !== undefined) message += ` - ${info.rxRssi}dBm`;
-        if (info.rxSnr !== undefined) message += `/${info.rxSnr}SNR`;
-        if (info.hopLimit !== undefined) message += `/${info.hopLimit}hop`;
+
+        // Check if RSSI or SNR is 0, then show MQTT instead of values
+        if (info.rxRssi === 0 || info.rxSnr === 0) {
+          message += ` MQTT`;
+        } else {
+          if (info.rxRssi !== undefined) message += ` ${info.rxRssi}dBm`;
+          if (info.rxSnr !== undefined) message += `/${info.rxSnr}SNR`;
+          if (info.hopLimit !== undefined) message += `/${info.hopLimit}hop`;
+        }
         message += `\n`;
       });
     }
