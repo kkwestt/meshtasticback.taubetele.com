@@ -115,16 +115,32 @@ const escapeHtml = (text) =>
     .replace(/'/g, "&#x27;");
 
 const formatTimeAgo = (timestamp) => {
-  if (!timestamp) return "";
-  const diffMs = Date.now() - new Date(timestamp);
-  const diffMinutes = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
+  if (
+    !timestamp ||
+    timestamp === "N/A" ||
+    timestamp === null ||
+    timestamp === undefined
+  )
+    return "";
 
-  if (diffMinutes < 1) return "[только что]";
-  if (diffMinutes < 60) return `[${diffMinutes} мин назад]`;
-  if (diffHours < 24) return `[${diffHours} ч назад]`;
-  return `[${diffDays} дн назад]`;
+  try {
+    const timestampDate = new Date(timestamp);
+    if (isNaN(timestampDate.getTime())) return "";
+
+    const diffMs = Date.now() - timestampDate.getTime();
+    if (diffMs < 0) return ""; // Время в будущем - некорректно
+
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMinutes < 1) return "[только что]";
+    if (diffMinutes < 60) return `[${diffMinutes} мин назад]`;
+    if (diffHours < 24) return `[${diffHours} ч назад]`;
+    return `[${diffDays} дн назад]`;
+  } catch (error) {
+    return "";
+  }
 };
 
 const getHwModelName = (hwModel) =>
@@ -278,10 +294,25 @@ const formatDeviceStats = async (stats, redis) => {
 
   let message = `📊 <b>Статистика устройства ${escapeHtml(deviceId)}</b>\n\n`;
 
-  // NodeInfo section
-  const longName = user?.data?.longName || userData?.longName || "Unknown";
-  const shortName = user?.data?.shortName || userData?.shortName || "N/A";
-  const hwModel = user?.data?.hwModel || userData?.hwModel || 255;
+  // NodeInfo section - support both camelCase and snake_case
+  const longName =
+    user?.data?.longName ||
+    user?.data?.long_name ||
+    userData?.longName ||
+    userData?.long_name ||
+    "Unknown";
+  const shortName =
+    user?.data?.shortName ||
+    user?.data?.short_name ||
+    userData?.shortName ||
+    userData?.short_name ||
+    "N/A";
+  const hwModel =
+    user?.data?.hwModel ||
+    user?.data?.hw_model ||
+    userData?.hwModel ||
+    userData?.hw_model ||
+    255;
   const role = user?.data?.role || userData?.role || 0;
 
   message += `👤 <b>Имя:</b> ${escapeHtml(longName)} (${escapeHtml(
@@ -375,11 +406,13 @@ const formatDeviceStats = async (stats, redis) => {
         messageText = msg.payload;
       }
 
-      message += `📝 ${escapeHtml(messageText)} \n`;
-      if (gateway)
+      message += `📝 ${escapeHtml(messageText)} ${timeAgo}\n`;
+      if (gateway) {
+        const gatewayIdForUrl = msg.gatewayId ? msg.gatewayId.substring(1) : "";
         message += `📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
           msg.gatewayId
-        )})\n`;
+        )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gatewayIdForUrl}">📊</a>\n`;
+      }
     });
 
     // Add Message RX information
@@ -417,16 +450,24 @@ const formatDeviceStats = async (stats, redis) => {
   if (position?.data || gpsHistory.length > 0) {
     message += `📍 <b>GPS данные:</b>\n`;
     const gpsData = position?.data || gpsHistory[0];
-    if (
-      gpsData &&
-      gpsData.latitudeI !== undefined &&
-      gpsData.longitudeI !== undefined
-    ) {
-      const lat = (gpsData.latitudeI / 1e7).toFixed(6);
-      const lon = (gpsData.longitudeI / 1e7).toFixed(6);
-      message += `🌍 <b>Координаты:</b><a href="https://yandex.ru/maps/?ll=${lon},${lat}&z=15&pt=${lon},${lat},pm2rdm">${lat}, ${lon}</a>\n`;
-      if (gpsData.altitude !== undefined && gpsData.altitude !== 0)
-        message += `🏔️ <b>Высота:</b> ${gpsData.altitude} м\n`;
+    if (gpsData) {
+      // Support different field name formats
+      const latitudeI = gpsData.latitudeI || gpsData.latitude_i;
+      const longitudeI = gpsData.longitudeI || gpsData.longitude_i;
+      const altitude = gpsData.altitude;
+      const time = gpsData.time;
+
+      if (latitudeI !== undefined && longitudeI !== undefined) {
+        const lat = (latitudeI / 1e7).toFixed(6);
+        const lon = (longitudeI / 1e7).toFixed(6);
+        message += `🌍 <b>Координаты:</b> <a href="https://yandex.ru/maps/?ll=${lon},${lat}&z=15&pt=${lon},${lat},pm2rdm">${lat}, ${lon}</a>\n`;
+        if (altitude !== undefined && altitude !== 0)
+          message += `🏔️ <b>Высота:</b> ${altitude} м\n`;
+        if (time) {
+          const gpsTime = formatTimeAgo(time * 1000); // GPS time is in seconds
+          if (gpsTime) message += `⏰ <b>GPS время:</b> ${gpsTime}\n`;
+        }
+      }
     }
 
     // Add GPS RX information
@@ -466,15 +507,40 @@ const formatDeviceStats = async (stats, redis) => {
   if (deviceMetrics?.data || deviceMetricsHistory.length > 0) {
     message += `🔋 <b>Метрики устройства:</b>\n`;
     const metrics = deviceMetrics?.data || deviceMetricsHistory[0];
+
+    // Debug: log metrics structure for troubleshooting
+    if (metrics && deviceId === "!f98db090") {
+      console.log(
+        "DEBUG: Device metrics structure for !f98db090:",
+        JSON.stringify(metrics, null, 2)
+      );
+    }
     if (metrics) {
-      if (metrics.batteryLevel !== undefined)
-        message += `🔋 <b>Батарея:</b> ${metrics.batteryLevel}%\n`;
-      if (metrics.voltage !== undefined)
-        message += `⚡ <b>Напряжение:</b> ${metrics.voltage}V\n`;
-      if (metrics.channelUtilization !== undefined)
-        message += `📶 <b>Канал:</b> ${metrics.channelUtilization}%\n`;
-      if (metrics.airUtilTx !== undefined)
-        message += `📡 <b>Air TX:</b> ${metrics.airUtilTx}%\n`;
+      // Handle nested structure: variant.value or direct metrics
+      const actualMetrics = metrics.variant?.value || metrics;
+
+      // Support both camelCase and snake_case field names
+      const batteryLevel =
+        actualMetrics.batteryLevel || actualMetrics.battery_level;
+      const voltage = actualMetrics.voltage;
+      const channelUtilization =
+        actualMetrics.channelUtilization || actualMetrics.channel_utilization;
+      const airUtilTx = actualMetrics.airUtilTx || actualMetrics.air_util_tx;
+      const uptimeSeconds =
+        actualMetrics.uptimeSeconds || actualMetrics.uptime_seconds;
+
+      if (batteryLevel !== undefined && batteryLevel !== null)
+        message += `🔋 <b>Батарея:</b> ${batteryLevel}%\n`;
+      if (voltage !== undefined && voltage !== null)
+        message += `⚡ <b>Напряжение:</b> ${voltage}V\n`;
+      if (channelUtilization !== undefined && channelUtilization !== null)
+        message += `📶 <b>Канал:</b> ${channelUtilization.toFixed(1)}%\n`;
+      if (airUtilTx !== undefined && airUtilTx !== null)
+        message += `📡 <b>Air TX:</b> ${airUtilTx.toFixed(1)}%\n`;
+      if (uptimeSeconds !== undefined && uptimeSeconds !== null) {
+        const uptimeHours = Math.floor(uptimeSeconds / 3600);
+        message += `⏰ <b>Время работы:</b> ${uptimeHours}ч\n`;
+      }
     }
 
     // Add Telemetry RX information
@@ -515,12 +581,27 @@ const formatDeviceStats = async (stats, redis) => {
     message += `🌡️ <b>Метрики окружающей среды:</b>\n`;
     const env = environmentMetrics?.data || envMetricsHistory[0];
     if (env) {
-      if (env.temperature !== undefined)
-        message += `🌡️ <b>Температура:</b> ${env.temperature}°C\n`;
-      if (env.relativeHumidity !== undefined)
-        message += `💧 <b>Влажность:</b> ${env.relativeHumidity}%\n`;
-      if (env.barometricPressure !== undefined)
-        message += `🌬️ <b>Давление:</b> ${env.barometricPressure} hPa\n`;
+      // Handle nested structure: variant.value or direct metrics
+      const actualEnv = env.variant?.value || env;
+
+      // Support both camelCase and snake_case field names
+      const temperature = actualEnv.temperature;
+      const relativeHumidity =
+        actualEnv.relativeHumidity || actualEnv.relative_humidity;
+      const barometricPressure =
+        actualEnv.barometricPressure || actualEnv.barometric_pressure;
+      const gasResistance = actualEnv.gasResistance || actualEnv.gas_resistance;
+      const voltage = actualEnv.voltage;
+      const current = actualEnv.current;
+
+      if (temperature !== undefined && temperature !== null)
+        message += `🌡️ <b>Температура:</b> ${temperature.toFixed(1)}°C\n`;
+      if (relativeHumidity !== undefined && relativeHumidity !== null)
+        message += `💧 <b>Влажность:</b> ${relativeHumidity.toFixed(1)}%\n`;
+      if (barometricPressure !== undefined && barometricPressure !== null)
+        message += `🌬️ <b>Давление:</b> ${barometricPressure.toFixed(1)} hPa\n`;
+      if (gasResistance !== undefined && gasResistance !== null)
+        message += `🌫️ <b>Газы:</b> ${gasResistance.toFixed(0)} Ω\n`;
     }
 
     // Add Environment RX information
@@ -616,16 +697,23 @@ const sendGroupedMessage = async (redis, messageId) => {
     }
 
     if (senderInfo) {
+      const deviceIdForUrl = senderId ? senderId.substring(1) : "";
       message += `\n👤 <b>От:</b> ${escapeHtml(
         senderInfo.longName
-      )} (${escapeHtml(senderId)})`;
+      )} (${escapeHtml(
+        senderId
+      )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
     } else if (senderId) {
-      message += `\n👤 <b>От:</b> Unknown (${escapeHtml(senderId)})`;
+      const deviceIdForUrl = senderId ? senderId.substring(1) : "";
+      message += `\n👤 <b>От:</b> Unknown (${escapeHtml(
+        senderId
+      )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
     }
 
     message += `\n📡 <b>Получено шлюзами (${gateways.length}):</b>\n`;
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
+      const gatewayIdForUrl = gatewayId ? gatewayId.substring(1) : "";
       message += `• ${escapeHtml(gateway?.longName || "Unknown")} (${escapeHtml(
         gatewayId
       )})`;
@@ -639,7 +727,8 @@ const sendGroupedMessage = async (redis, messageId) => {
         const formattedHop = formatHopCount(info.hopLimit);
         if (formattedHop) message += `/${formattedHop}`;
       }
-      message += `\n`;
+
+      message += ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gatewayIdForUrl}">📊</a>\n`;
     });
 
     await sendTelegramMessage(message);
