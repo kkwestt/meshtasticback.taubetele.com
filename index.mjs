@@ -816,10 +816,9 @@ class MeshtasticRedisClient {
       }
 
       console.log(
-        `💬 [СТАРАЯ СХЕМА] Сообщение сохранено: "${messageText.substring(
-          0,
-          50
-        )}${messageText.length > 50 ? "..." : ""}"`
+        `💬 Сообщение сохранено: "${messageText.substring(0, 50)}${
+          messageText.length > 50 ? "..." : ""
+        }"`
       );
 
       // Отправляем в Telegram
@@ -1030,11 +1029,7 @@ class MeshtasticRedisClient {
       if (this.redisManager) {
         await this.redisManager.disconnect();
       }
-
-      console.log("✅ Все сервисы отключены");
-    } catch (error) {
-      console.error("❌ Ошибка при отключении:", error.message);
-    }
+    } catch (error) {}
   }
 }
 
@@ -1042,7 +1037,7 @@ class MeshtasticRedisClient {
  * Главная функция запуска приложения
  */
 async function main() {
-  console.log("🚀 Запуск оптимизированного Meshtastic MQTT клиента...");
+  console.log("🚀 Запуск Meshtastic MQTT сервера...");
   console.log(`📡 Подключение к ${servers.length} серверам:`);
   servers.forEach((server) => {
     console.log(`  🌐 ${server.name} (${server.address})`);
