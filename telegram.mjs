@@ -357,9 +357,9 @@ const formatDeviceStats = async (stats, redis) => {
         messageText = msg.payload;
       }
 
-      message += `📝 "${escapeHtml(messageText)}" ${timeAgo}\n`;
+      message += `📝 ${escapeHtml(messageText)} \n`;
       if (gateway)
-        message += `   📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
+        message += `📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
           msg.gatewayId
         )})\n`;
     });
