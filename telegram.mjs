@@ -318,6 +318,7 @@ const formatDeviceStats = async (stats, redis) => {
   message += `👤 <b>Имя:</b> ${escapeHtml(longName)} (${escapeHtml(
     shortName
   )})\n`;
+  message += `🆔 <b>ID:</b> ${escapeHtml(deviceId)}\n`;
   message += `🔧 <b>Модель:</b> ${escapeHtml(getHwModelName(hwModel))}\n`;
   message += `⚡ <b>Роль:</b> ${escapeHtml(getRoleName(role))}\n`;
 
@@ -407,12 +408,6 @@ const formatDeviceStats = async (stats, redis) => {
       }
 
       message += `📝 ${escapeHtml(messageText)} ${timeAgo}\n`;
-      // if (gateway) {
-      //   const gatewayIdForUrl = msg.gatewayId ? msg.gatewayId.substring(1) : "";
-      //   message += `📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
-      //     msg.gatewayId
-      //   )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gatewayIdForUrl}">📊</a>\n`;
-      // }
     });
 
     // Add Message RX information
@@ -534,7 +529,9 @@ const formatDeviceStats = async (stats, redis) => {
         message += `📡 <b>Air TX:</b> ${airUtilTx.toFixed(1)}%\n`;
       if (uptimeSeconds !== undefined && uptimeSeconds !== null) {
         const uptimeHours = Math.floor(uptimeSeconds / 3600);
-        message += `⏰ <b>Время работы:</b> ${uptimeHours}ч\n`;
+        if (uptimeHours > 0) {
+          message += `⏰ <b>Время работы:</b> ${uptimeHours}ч\n`;
+        }
       }
     }
 
@@ -634,8 +631,12 @@ const formatDeviceStats = async (stats, redis) => {
   }
 
   message += `\n🌐 <b>MQTT:</b> ${escapeHtml(server)}\n`;
-  if (lastSeen)
-    message += `⏰ <b>Последняя активность:</b> ${formatTimeAgo(lastSeen)}\n`;
+  if (lastSeen) {
+    const lastActivity = formatTimeAgo(lastSeen);
+    if (lastActivity) {
+      message += `⏰ <b>Последняя активность:</b> ${lastActivity}\n`;
+    }
+  }
 
   return message;
 };
