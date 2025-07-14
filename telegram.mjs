@@ -341,8 +341,23 @@ const formatDeviceStats = async (stats, redis) => {
     message += `💬 <b>Последние сообщения:</b>\n`;
     lastMessages.slice(0, 3).forEach((msg) => {
       const gateway = gatewayInfoMap[msg.gatewayId];
-      const timeAgo = formatTimeAgo(msg.serverTime);
-      message += `📝 "${escapeHtml(msg.data?.text || "N/A")}" ${timeAgo}\n`;
+      const timeAgo = formatTimeAgo(
+        msg.serverTime || msg.timestamp || msg.rxTime
+      );
+
+      // Try different ways to get message text
+      let messageText = "N/A";
+      if (typeof msg.data === "string") {
+        messageText = msg.data;
+      } else if (msg.data?.text) {
+        messageText = msg.data.text;
+      } else if (msg.text) {
+        messageText = msg.text;
+      } else if (msg.payload) {
+        messageText = msg.payload;
+      }
+
+      message += `📝 "${escapeHtml(messageText)}" ${timeAgo}\n`;
       if (gateway)
         message += `   📡 ${escapeHtml(gateway.longName)} (${escapeHtml(
           msg.gatewayId
@@ -372,8 +387,10 @@ const formatDeviceStats = async (stats, redis) => {
           message += `Hop: ${lastMsg.hopLimit} `;
         }
         message += `RSSI/SNR: ${lastMsg.rxRssi}/${lastMsg.rxSnr}`;
-        if (lastMsg.serverTime) {
-          message += ` ${formatTimeAgo(lastMsg.serverTime)}`;
+        if (lastMsg.serverTime || lastMsg.timestamp || lastMsg.rxTime) {
+          message += ` ${formatTimeAgo(
+            lastMsg.serverTime || lastMsg.timestamp || lastMsg.rxTime
+          )}`;
         }
         message += `\n`;
       }
