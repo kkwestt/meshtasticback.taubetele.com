@@ -584,13 +584,25 @@ const sendGroupedMessage = async (redis, messageId) => {
       }
     }
 
-    let message = `💬 <b>Сообщение:</b> "${escapeHtml(messageText)}"`;
+    let message = `💬 <b>Msg:</b> "${escapeHtml(messageText)}"`;
 
-    const fromGateway = gatewayInfoMap[event.gatewayId];
-    if (fromGateway) {
+    // Get sender info using event.from (actual sender), not event.gatewayId (receiver gateway)
+    const senderId = event.from
+      ? `!${event.from.toString(16).padStart(8, "0")}`
+      : null;
+    let senderInfo = null;
+
+    if (senderId) {
+      senderInfo = await getGatewayInfoBatch(redis, [senderId]);
+      senderInfo = senderInfo[senderId];
+    }
+
+    if (senderInfo) {
       message += `\n👤 <b>От:</b> ${escapeHtml(
-        fromGateway.longName
-      )} (${escapeHtml(event.gatewayId)})`;
+        senderInfo.longName
+      )} (${escapeHtml(senderId)})`;
+    } else if (senderId) {
+      message += `\n👤 <b>От:</b> Unknown (${escapeHtml(senderId)})`;
     }
 
     if (gateways.length > 1) {
