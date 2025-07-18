@@ -63,6 +63,9 @@ export class HTTPServer {
     );
     this.app.get("/portnum-stats", this.handlePortnumStatsEndpoint.bind(this));
 
+    // Nodes endpoint - список всех устройств
+    this.app.get("/nodes", this.handleNodesEndpoint.bind(this));
+
     // Endpoint для формата portnumName:deviceId
     this.app.get(
       "/:portnumNameAndDeviceId",
@@ -391,6 +394,118 @@ export class HTTPServer {
         res,
         `Portnum colon format endpoint (${req.params.portnumNameAndDeviceId})`
       );
+    }
+  }
+
+  /**
+   * Обрабатывает /nodes endpoint - возвращает список всех устройств
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleNodesEndpoint(req, res) {
+    try {
+      const nodes = await this.buildNodesResponse();
+
+      res.json(nodes);
+    } catch (error) {
+      handleEndpointError(error, res, "Nodes endpoint");
+    }
+  }
+
+  /**
+   * Строит ответ для /nodes endpoint
+   * @returns {Array} - Массив узлов с данными
+   */
+  async buildNodesResponse() {
+    try {
+      // Получаем все ключи user: и POSITION_APP:
+      const [userKeys, positionKeys] = await Promise.all([
+        this.redisManager.redis.keys("user:*"),
+        this.redisManager.redis.keys("POSITION_APP:*"),
+      ]);
+
+      if (userKeys.length === 0) {
+        return [];
+      }
+
+      // Получаем данные пользователей
+      const userDataPromises = userKeys.map((key) =>
+        this.redisManager.redis.hgetall(key)
+      );
+      const userDataResults = await Promise.all(userDataPromises);
+
+      // Создаем карту пользователей
+      const userMap = new Map();
+      userKeys.forEach((key, index) => {
+        const deviceId = key.split(":")[1];
+        const userData = userDataResults[index];
+        if (userData && Object.keys(userData).length > 0) {
+          userMap.set(deviceId, userData);
+        }
+      });
+
+      // Получаем последние позиции для каждого устройства
+      const positionDataPromises = positionKeys.map(
+        (key) => this.redisManager.redis.lrange(key, -1, -1) // Последняя запись
+      );
+      const positionDataResults = await Promise.all(positionDataPromises);
+
+      // Создаем карту позиций
+      const positionMap = new Map();
+      positionKeys.forEach((key, index) => {
+        const deviceId = key.split(":")[1];
+        const positionData = positionDataResults[index];
+        if (positionData && positionData.length > 0) {
+          try {
+            const parsedPosition = JSON.parse(positionData[0]);
+            positionMap.set(deviceId, parsedPosition);
+          } catch (error) {
+            console.error(
+              `Error parsing position data for ${deviceId}:`,
+              error.message
+            );
+          }
+        }
+      });
+
+      // Собираем результат
+      const nodes = [];
+      userMap.forEach((userData, deviceId) => {
+        const position = positionMap.get(deviceId);
+        const positionData = position?.rawData || {};
+
+        // Преобразуем hex ID в числовой
+        const nodeIdHex = `!${deviceId}`;
+        const nodeId = parseInt(deviceId, 16);
+
+        const node = {
+          node_id: nodeId.toString(),
+          node_id_hex: nodeIdHex,
+          long_name: userData.longName || userData.long_name || null,
+          short_name: userData.shortName || userData.short_name || null,
+          hw_model:
+            userData.hwModel || userData.hw_model
+              ? parseInt(userData.hwModel || userData.hw_model)
+              : null,
+          role: userData.role !== undefined ? parseInt(userData.role) : null,
+          timestamp: position?.timestamp || null,
+          latitudeI:
+            positionData?.latitudeI || positionData?.latitude_i || null,
+          longitudeI:
+            positionData?.longitudeI || positionData?.longitude_i || null,
+          altitude: positionData?.altitude || null,
+        };
+
+        // Добавляем только узлы с координатами
+        if (node.latitudeI !== null && node.longitudeI !== null) {
+          nodes.push(node);
+        }
+      });
+
+      return nodes;
+    } catch (error) {
+      console.error("Error building nodes response:", error.message);
+      return [];
     }
   }
 
