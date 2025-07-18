@@ -157,13 +157,6 @@ export const servers = [
 - Автоудаление устаревших данных (24 часа)
 - Graceful shutdown
 
-## Совместимость
-
-Проект совместим с API meshtasticback.taubetele.com:
-
-- Те же endpoints
-- Аналогичная структура данных
-- Поддержка всех типов метрик
 
 ## Лицензия
 
