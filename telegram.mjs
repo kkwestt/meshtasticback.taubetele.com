@@ -635,7 +635,7 @@ const formatDeviceStats = async (stats, redis) => {
 // Check if topic is allowed for Telegram notifications
 const isAllowedTopic = (topic) => {
   if (!topic) return false;
-  const allowedPrefixes = ["msh/msk/", "msh/kgd/"];
+  const allowedPrefixes = ["msh/msk/", "msh/kgd/,"msh/ufa/""];
   return allowedPrefixes.some((prefix) => topic.startsWith(prefix));
 };
 
@@ -644,6 +644,7 @@ const getChannelIdByTopic = (topic) => {
   if (!topic) return botSettings.MAIN_CHANNEL_ID;
   if (topic.startsWith("msh/kgd/")) return botSettings.KALININGRAD_CHANNEL_ID;
   if (topic.startsWith("msh/msk/")) return botSettings.MAIN_CHANNEL_ID;
+  if (topic.startsWith("msh/ufa/")) return botSettings.UFA_CHANNEL_ID;
   return botSettings.MAIN_CHANNEL_ID;
 };
 
