@@ -635,7 +635,7 @@ const formatDeviceStats = async (stats, redis) => {
 // Check if topic is allowed for Telegram notifications
 const isAllowedTopic = (topic) => {
   if (!topic) return false;
-  const allowedPrefixes = ["msh/msk/", "msh/kgd/,"msh/ufa/""];
+  const allowedPrefixes = ["msh/msk/", "msh/kgd/", "msh/ufa/"];
   return allowedPrefixes.some((prefix) => topic.startsWith(prefix));
 };
 
