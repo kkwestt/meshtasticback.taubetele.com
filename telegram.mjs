@@ -635,8 +635,16 @@ const formatDeviceStats = async (stats, redis) => {
 // Check if topic is allowed for Telegram notifications
 const isAllowedTopic = (topic) => {
   if (!topic) return false;
-  const allowedPrefixes = ["msh/msk/", "msh/RU/", "msh/EU_868/", "msh/EU_433/"];
+  const allowedPrefixes = ["msh/msk/", "msh/kgd/"];
   return allowedPrefixes.some((prefix) => topic.startsWith(prefix));
+};
+
+// Select Telegram channel by topic
+const getChannelIdByTopic = (topic) => {
+  if (!topic) return botSettings.MAIN_CHANNEL_ID;
+  if (topic.startsWith("msh/kgd/")) return botSettings.KALININGRAD_CHANNEL_ID;
+  if (topic.startsWith("msh/msk/")) return botSettings.MAIN_CHANNEL_ID;
+  return botSettings.MAIN_CHANNEL_ID;
 };
 
 // Send grouped message to Telegram
@@ -718,7 +726,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       message += ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gatewayIdForUrl}">📊</a>\n`;
     });
 
-    await sendTelegramMessage(message);
+    await sendTelegramMessage(message, group.channelId);
     console.log(`Telegram message sent successfully for group ${messageId}`);
   } catch (error) {
     console.error("Error sending grouped message:", error.message);
@@ -728,20 +736,24 @@ const sendGroupedMessage = async (redis, messageId) => {
 };
 
 // Send message to Telegram with error handling
-const sendTelegramMessage = async (message) => {
+const sendTelegramMessage = async (message, channelId) => {
   if (!bot || !botSettings.ENABLE) return;
 
   try {
-    await bot.telegram.sendMessage(botSettings.CHANNEL_ID, message, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
+    await bot.telegram.sendMessage(
+      channelId || botSettings.MAIN_CHANNEL_ID,
+      message,
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }
+    );
   } catch (error) {
     console.error("Error sending telegram message:", error.message);
     // Fallback: send without formatting
     try {
       await bot.telegram.sendMessage(
-        botSettings.CHANNEL_ID,
+        channelId || botSettings.MAIN_CHANNEL_ID,
         message.replace(/<[^>]*>/g, ""),
         { disable_web_page_preview: true }
       );
@@ -864,6 +876,7 @@ export const handleTelegramMessage = async (
       event: event,
       gateways: new Map(),
       timeout: null,
+      channelId: getChannelIdByTopic(fullTopic),
     });
   }
 
