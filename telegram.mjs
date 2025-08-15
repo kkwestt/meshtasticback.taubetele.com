@@ -313,6 +313,34 @@ const getDeviceStats = async (redis, deviceId) => {
   }
 };
 
+// Check if device is an MQTT gateway
+const checkIfGateway = (role, server, deviceId, gatewayInfoMap) => {
+  // Gateway roles that typically indicate MQTT connectivity
+  const gatewayRoles = [
+    2, // ROUTER
+    3, // ROUTER_CLIENT (deprecated but still used)
+    4, // REPEATER
+    11, // ROUTER_LATE
+  ];
+
+  // Check if device has a gateway role
+  const hasGatewayRole = gatewayRoles.includes(role);
+
+  // Check if this device appears as a gateway for others
+  const numericDeviceId = hexToNumeric(deviceId);
+  const isActingAsGateway = Object.values(gatewayInfoMap).some(
+    (gateway) => hexToNumeric(gateway.idHex) === numericDeviceId
+  );
+
+  // Check if connected to MQTT server
+  const hasServerConnection = server && server !== "Unknown";
+
+  // Device is considered a gateway if:
+  // 1. It has a gateway role AND is connected to MQTT server, OR
+  // 2. It's actively acting as a gateway for other devices
+  return (hasGatewayRole && hasServerConnection) || isActingAsGateway;
+};
+
 // Format device statistics for Telegram
 const formatDeviceStats = async (stats, redis) => {
   if (!stats) return "❌ Устройство не найдено или нет данных";
@@ -683,7 +711,14 @@ const formatDeviceStats = async (stats, redis) => {
     message += `\n`;
   }
 
-  message += `\n🌐 <b>MQTT:</b> ${escapeHtml(server)}\n`;
+  // Check if device is an MQTT gateway
+  const isGateway = checkIfGateway(role, server, deviceId, gatewayInfoMap);
+
+  if (isGateway) {
+    message += `\n🔗 <b>MQTT Шлюз</b>\n`;
+  }
+
+  message += `🌐 <b>MQTT:</b> ${escapeHtml(server)}\n`;
   return message;
 };
 
