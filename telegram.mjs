@@ -315,30 +315,26 @@ const getDeviceStats = async (redis, deviceId) => {
 
 // Check if device is an MQTT gateway
 const checkIfGateway = (role, server, deviceId, gatewayInfoMap) => {
-  // Gateway roles that typically indicate MQTT connectivity
-  const gatewayRoles = [
-    2, // ROUTER
-    3, // ROUTER_CLIENT (deprecated but still used)
-    4, // REPEATER
-    11, // ROUTER_LATE
-  ];
+  try {
+    // Защитные проверки
+    if (!deviceId || !gatewayInfoMap) {
+      return false;
+    }
 
-  // Check if device has a gateway role
-  const hasGatewayRole = gatewayRoles.includes(role);
+    // Устройство считается MQTT шлюзом ТОЛЬКО если:
+    // Оно реально выступает gatewayId для других устройств в сети
+    const numericDeviceId = toNumericId(deviceId);
+    const isActingAsGateway = Object.values(gatewayInfoMap).some(
+      (gateway) => toNumericId(gateway.idHex) === numericDeviceId
+    );
 
-  // Check if this device appears as a gateway for others
-  const numericDeviceId = hexToNumeric(deviceId);
-  const isActingAsGateway = Object.values(gatewayInfoMap).some(
-    (gateway) => hexToNumeric(gateway.idHex) === numericDeviceId
-  );
-
-  // Check if connected to MQTT server
-  const hasServerConnection = server && server !== "Unknown";
-
-  // Device is considered a gateway if:
-  // 1. It has a gateway role AND is connected to MQTT server, OR
-  // 2. It's actively acting as a gateway for other devices
-  return (hasGatewayRole && hasServerConnection) || isActingAsGateway;
+    // Показываем "MQTT Шлюз" только для устройств, которые реально
+    // ретранслируют сообщения от других устройств
+    return isActingAsGateway;
+  } catch (error) {
+    console.error("Error in checkIfGateway:", error.message);
+    return false;
+  }
 };
 
 // Format device statistics for Telegram
