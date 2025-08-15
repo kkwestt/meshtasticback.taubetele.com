@@ -198,6 +198,21 @@ const formatTimeAgo = (timestamp) => {
   }
 };
 
+const formatUptime = (hours) => {
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+
+    if (remainingHours === 0) {
+      return `${days}д`;
+    } else {
+      return `${days}д ${remainingHours}ч`;
+    }
+  } else {
+    return `${hours}ч`;
+  }
+};
+
 const getHwModelName = (hwModel) =>
   HW_MODELS[hwModel] || `Unknown (${hwModel})`;
 const getRoleName = (role) => ROLES[role] || `Unknown (${role})`;
@@ -521,7 +536,7 @@ const formatDeviceStats = async (stats, redis) => {
 
   // GPS section
   if (position?.data || gpsHistory.length > 0) {
-    message += `📍 <b>GPS данные:</b>\n`;
+    // message += `📍 <b>GPS данные:</b>\n`;
     const gpsData = position?.data || gpsHistory[0];
     if (gpsData) {
       // Support different field name formats
@@ -553,6 +568,7 @@ const formatDeviceStats = async (stats, redis) => {
       gatewayId
     ) {
       const gatewayInfo = gatewayInfoMap[gatewayId];
+
       if (gatewayInfo) {
         message += `🛰️ <b>GPS RX:</b> ${escapeHtml(
           gatewayInfo.longName
@@ -573,20 +589,12 @@ const formatDeviceStats = async (stats, redis) => {
 
   // Device metrics section
   if (deviceMetrics?.data || deviceMetricsHistory.length > 0) {
-    message += `🔋 <b>Метрики устройства:</b>\n`;
     const metrics = deviceMetrics?.data || deviceMetricsHistory[0];
 
-    // Debug: log metrics structure for troubleshooting
-    if (metrics && deviceId === "!f98db090") {
-      console.log(
-        "DEBUG: Device metrics structure for !f98db090:",
-        JSON.stringify(metrics, null, 2)
-      );
-    }
     if (metrics) {
       // Handle nested structure: variant.value or direct metrics
       const actualMetrics = metrics.variant?.value || metrics;
-
+      // message += `🔋 <b>Метрики устройства:</b>\n`;
       // Support both camelCase and snake_case field names
       const batteryLevel =
         actualMetrics.batteryLevel || actualMetrics.battery_level;
@@ -608,7 +616,7 @@ const formatDeviceStats = async (stats, redis) => {
       if (uptimeSeconds !== undefined && uptimeSeconds !== null) {
         const uptimeHours = Math.floor(uptimeSeconds / 3600);
         if (uptimeHours > 0) {
-          message += `⏰ <b>Время работы:</b> ${uptimeHours}ч\n`;
+          message += `⏰ <b>Время работы:</b> ${formatUptime(uptimeHours)}\n`;
         }
       }
     }
@@ -647,7 +655,6 @@ const formatDeviceStats = async (stats, redis) => {
 
   // Environment metrics section
   if (environmentMetrics?.data || envMetricsHistory.length > 0) {
-    message += `🌡️ <b>Метрики окружающей среды:</b>\n`;
     const env = environmentMetrics?.data || envMetricsHistory[0];
     if (env) {
       // Handle nested structure: variant.value or direct metrics
