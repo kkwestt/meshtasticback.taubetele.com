@@ -264,9 +264,25 @@ class MeshtasticRedisClient {
         return;
       }
 
-      const serviceEnvelope =
-        this.protoTypes.ServiceEnvelope.decode(arrayBuffer);
-      // console.log(`✅ ServiceEnvelope декодирован`);
+      // Дополнительная проверка размера перед декодированием
+      if (arrayBuffer.length > 1048576) {
+        // 1MB лимит
+        console.log(`❌ Пакет слишком большой: ${arrayBuffer.length} байт`);
+        return;
+      }
+
+      let serviceEnvelope;
+      try {
+        serviceEnvelope = this.protoTypes.ServiceEnvelope.decode(arrayBuffer);
+      } catch (decodeError) {
+        // Логируем только если это не подавляемая ошибка
+        if (shouldLogError(decodeError.message)) {
+          console.error(
+            `❌ Ошибка декодирования ServiceEnvelope: ${decodeError.message}`
+          );
+        }
+        return;
+      }
 
       if (!serviceEnvelope?.packet) {
         console.log(`❌ ServiceEnvelope НЕ декодирован`);
@@ -507,10 +523,37 @@ class MeshtasticRedisClient {
    */
   decodePayload(protoType, payload) {
     try {
+      // Проверяем валидность входных данных
+      if (!payload || typeof payload !== "string") {
+        throw new Error(
+          `Invalid payload: expected base64 string, got ${typeof payload}`
+        );
+      }
+
+      if (!this.protoTypes[protoType]) {
+        throw new Error(`Unknown proto type: ${protoType}`);
+      }
+
       const payloadBuffer = Buffer.from(payload, "base64");
+
+      // Проверяем размер декодированного буфера
+      if (payloadBuffer.length === 0) {
+        throw new Error(`Empty payload after base64 decode`);
+      }
+
+      if (payloadBuffer.length > 65536) {
+        // 64KB лимит
+        throw new Error(`Payload too large: ${payloadBuffer.length} bytes`);
+      }
+
       return this.protoTypes[protoType].decode(payloadBuffer);
     } catch (error) {
-      throw new Error(`Failed to decode ${protoType}: ${error.message}`);
+      // Если это не подавляемая ошибка, выбрасываем оригинальную
+      if (shouldLogError(error.message)) {
+        throw new Error(`Failed to decode ${protoType}: ${error.message}`);
+      }
+      // Возвращаем null для подавляемых ошибок
+      return null;
     }
   }
 
@@ -551,6 +594,8 @@ class MeshtasticRedisClient {
       if (!event.data?.payload) return;
 
       const userData = this.decodePayload("User", event.data.payload);
+      if (!userData) return; // Пропускаем если декодирование не удалось
+
       const { shortName, longName, id, macaddr, publicKey, hwModel, role } =
         userData;
 
@@ -583,6 +628,8 @@ class MeshtasticRedisClient {
       if (!event.data?.payload) return;
 
       const positionData = this.decodePayload("Position", event.data.payload);
+      if (!positionData) return; // Пропускаем если декодирование не удалось
+
       const {
         latitudeI,
         longitudeI,
@@ -628,6 +675,7 @@ class MeshtasticRedisClient {
       if (!event.data?.payload) return;
 
       const telemetryData = this.decodePayload("Telemetry", event.data.payload);
+      if (!telemetryData) return; // Пропускаем если декодирование не удалось
 
       // Определяем тип телеметрии
       let deviceMetrics = null;
@@ -847,6 +895,8 @@ class MeshtasticRedisClient {
         "NeighborInfo",
         event.data.payload
       );
+      if (!neighborInfoData) return; // Пропускаем если декодирование не удалось
+
       const { nodeId, lastSentById, nodeBroadcastIntervalSecs, neighbors } =
         neighborInfoData;
 
@@ -960,6 +1010,16 @@ class MeshtasticRedisClient {
    * Расшифровывает пакет
    */
   decrypt(packet) {
+    // Проверяем валидность входных данных
+    if (!packet?.encrypted || !packet.id || !packet.from) {
+      return null;
+    }
+
+    // Проверяем размер зашифрованных данных
+    if (packet.encrypted.length === 0 || packet.encrypted.length > 65536) {
+      return null;
+    }
+
     for (const decryptionKey of DECRYPTION_KEYS) {
       try {
         const key = Buffer.from(decryptionKey, "base64");
@@ -980,7 +1040,17 @@ class MeshtasticRedisClient {
           decipher.final(),
         ]);
 
-        return this.protoTypes.Data.decode(decryptedBuffer);
+        // Проверяем размер расшифрованных данных
+        if (decryptedBuffer.length === 0 || decryptedBuffer.length > 65536) {
+          continue;
+        }
+
+        try {
+          return this.protoTypes.Data.decode(decryptedBuffer);
+        } catch (decodeError) {
+          // Если декодирование не удалось, продолжаем со следующим ключом
+          continue;
+        }
       } catch (e) {
         // Пробуем следующий ключ
       }

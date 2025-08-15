@@ -654,6 +654,20 @@ class ProtobufDecoder {
 
   decodeServiceEnvelope(buffer) {
     try {
+      // Проверяем валидность буфера
+      if (!buffer || buffer.length === 0) {
+        throw new Error("Empty buffer provided");
+      }
+
+      if (buffer.length < 10) {
+        throw new Error(`Buffer too short: ${buffer.length} bytes`);
+      }
+
+      if (buffer.length > 1048576) {
+        // 1MB лимит
+        throw new Error(`Buffer too large: ${buffer.length} bytes`);
+      }
+
       return this.ServiceEnvelope.decode(buffer);
     } catch (error) {
       throw new Error(`Failed to decode ServiceEnvelope: ${error.message}`);
@@ -662,6 +676,20 @@ class ProtobufDecoder {
 
   decodePayload(portnum, payload) {
     try {
+      // Проверяем валидность входных данных
+      if (!payload) {
+        throw new Error("Payload is null or undefined");
+      }
+
+      if (payload.length === 0) {
+        throw new Error("Empty payload");
+      }
+
+      if (payload.length > 65536) {
+        // 64KB лимит
+        throw new Error(`Payload too large: ${payload.length} bytes`);
+      }
+
       const config = MESSAGE_DECODERS[portnum];
       if (!config) {
         return {
@@ -675,6 +703,9 @@ class ProtobufDecoder {
 
       let decodedData;
       if (config.decoder) {
+        if (!this.decoders[config.decoder]) {
+          throw new Error(`Decoder not found for type: ${config.decoder}`);
+        }
         decodedData = this.decoders[config.decoder].decode(payload);
       } else {
         decodedData = payload;
@@ -687,23 +718,48 @@ class ProtobufDecoder {
         data: processedData,
       };
     } catch (error) {
-      return {
+      // Возвращаем детализированную информацию об ошибке только в режиме разработки
+      const errorInfo = {
         type: "error",
         data: {
           error: error.message,
           portnum,
-          payload: Array.from(payload),
+          payloadSize: payload ? payload.length : 0,
         },
       };
+
+      // Добавляем дамп данных только для небольших payload
+      if (payload && payload.length <= 100) {
+        errorInfo.data.payload = Array.from(payload);
+      }
+
+      return errorInfo;
     }
   }
 
   processPacket(buffer, additionalInfo = {}) {
     try {
-      const serviceEnvelope = this.decodeServiceEnvelope(buffer);
-      const packet = serviceEnvelope.packet;
+      // Дополнительная проверка буфера
+      if (!buffer || buffer.length === 0) {
+        return null;
+      }
 
-      if (!packet || !packet.decoded) {
+      const serviceEnvelope = this.decodeServiceEnvelope(buffer);
+      if (!serviceEnvelope) {
+        return null;
+      }
+
+      const packet = serviceEnvelope.packet;
+      if (!packet) {
+        return null;
+      }
+
+      // Проверяем базовые поля пакета
+      if (typeof packet.from !== "number" || packet.from === 0) {
+        return null;
+      }
+
+      if (!packet.decoded || !packet.decoded.payload) {
         return null;
       }
 
@@ -711,6 +767,11 @@ class ProtobufDecoder {
         packet.decoded.portnum,
         packet.decoded.payload
       );
+
+      // Если декодирование завершилось ошибкой, не возвращаем пакет
+      if (decoded.type === "error") {
+        return null;
+      }
 
       return {
         from: packet.from,
@@ -728,7 +789,14 @@ class ProtobufDecoder {
         ...additionalInfo,
       };
     } catch (error) {
-      console.error("Error processing packet:", error.message);
+      // Логируем только важные ошибки, пропускаем частые protobuf ошибки
+      if (
+        !error.message.includes("index out of range") &&
+        !error.message.includes("illegal tag") &&
+        !error.message.includes("invalid wire type")
+      ) {
+        console.error("Error processing packet:", error.message);
+      }
       return null;
     }
   }

@@ -57,18 +57,54 @@ export const round = (num, decimalPlaces = 0) => {
 };
 
 /**
- * Валидация пакетов
- * @param {ArrayBuffer} arrayBuffer - Буфер для проверки
+ * Валидация protobuf пакетов
+ * @param {ArrayBuffer|Uint8Array} arrayBuffer - Буфер для проверки
  * @returns {boolean} - Валидность пакета
  */
 export const isValidPacket = (arrayBuffer) => {
   if (!arrayBuffer || arrayBuffer.length === 0) return false;
-  if (arrayBuffer.length < 4) return false;
+
+  // Минимальная длина для ServiceEnvelope - должно быть больше 10 байт
+  if (arrayBuffer.length < 10) return false;
+
   try {
-    const view = new DataView(arrayBuffer.buffer || arrayBuffer);
-    const firstByte = view.getUint8(0);
-    return firstByte >= 0x08 && firstByte <= 0x78;
-  } catch {
+    // Проверяем, что это корректная структура protobuf
+    const buffer = arrayBuffer.buffer
+      ? new Uint8Array(arrayBuffer)
+      : arrayBuffer;
+
+    // Первый байт должен указывать на поле 1 (packet) и быть wire type 2 (length-delimited)
+    const firstByte = buffer[0];
+    if ((firstByte & 0x07) !== 2) return false; // Должен быть wire type 2
+    if (firstByte >> 3 !== 1) return false; // Должен быть field number 1
+
+    // Проверяем, что есть корректная длина для первого поля
+    if (buffer.length < 2) return false;
+
+    let lengthPos = 1;
+    let length = 0;
+    let shift = 0;
+
+    // Декодируем varint длину
+    while (lengthPos < buffer.length && shift < 32) {
+      const byte = buffer[lengthPos];
+      length |= (byte & 0x7f) << shift;
+      lengthPos++;
+
+      if ((byte & 0x80) === 0) {
+        break; // Конец varint
+      }
+      shift += 7;
+    }
+
+    // Проверяем, что указанная длина не превышает размер буфера
+    if (lengthPos + length > buffer.length) return false;
+
+    // Дополнительная проверка: длина должна быть разумной (не больше 64KB)
+    if (length > 65536) return false;
+
+    return true;
+  } catch (error) {
     return false;
   }
 };
