@@ -260,7 +260,7 @@ class MeshtasticRedisClient {
 
       // Валидация пакета
       if (!isValidPacket(arrayBuffer)) {
-        console.log(`❌ Пакет НЕ валидный`);
+        // console.log(`❌ Пакет НЕ валидный`);
         return;
       }
 
