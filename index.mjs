@@ -485,12 +485,8 @@ class MeshtasticRedisClient {
       }
 
       // СТАРАЯ СХЕМА: Обрабатываем разные типы событий как было раньше
-      console.log(
-        `🎯 Processing event type: ${eventType} for device ${event.from}`
-      );
       switch (eventType) {
         case "user":
-          console.log(`📞 Calling handleUserEvent for device ${event.from}`);
           await this.handleUserEvent(server, event, key, serverTime);
           break;
         case "position":
