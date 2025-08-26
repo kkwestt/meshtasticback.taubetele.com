@@ -456,12 +456,34 @@ class MeshtasticRedisClient {
               ...decodedPayload.data,
             };
 
-            // Если это NODEINFO_APP, сохраняем в старую схему тоже
+            // Сохраняем в старую схему для соответствующих типов
             if (
               event.data.portnum === 4 ||
               event.data.portnum === "NODEINFO_APP"
             ) {
               await this.saveUserDataToOldSchema(
+                server,
+                event,
+                key,
+                serverTime,
+                decodedPayload.data
+              );
+            } else if (
+              event.data.portnum === 3 ||
+              event.data.portnum === "POSITION_APP"
+            ) {
+              await this.savePositionDataToOldSchema(
+                server,
+                event,
+                key,
+                serverTime,
+                decodedPayload.data
+              );
+            } else if (
+              event.data.portnum === 67 ||
+              event.data.portnum === "TELEMETRY_APP"
+            ) {
+              await this.saveTelemetryDataToOldSchema(
                 server,
                 event,
                 key,
@@ -637,6 +659,97 @@ class MeshtasticRedisClient {
       await this.saveToRedis(key, serverTime, deviceData, server, "user");
     } catch (error) {
       console.error("❌ Error saving user data to old schema:", error.message);
+    }
+  }
+
+  /**
+   * Сохраняет декодированные данные позиции в старую схему
+   */
+  async savePositionDataToOldSchema(
+    server,
+    event,
+    key,
+    serverTime,
+    decodedPositionData
+  ) {
+    try {
+      const {
+        latitude_i: latitudeI,
+        longitude_i: longitudeI,
+        altitude,
+        sats_in_view: satsInView,
+        time: posTime,
+      } = decodedPositionData;
+
+      // Проверяем валидность координат
+      if (latitudeI && longitudeI && latitudeI !== 0 && longitudeI !== 0) {
+        // Сохраняем в gps ключ
+        const gpsKey = `gps:${event.from}`;
+        const newPosItem = {
+          latitudeI,
+          longitudeI,
+          altitude: altitude || undefined,
+          time: serverTime,
+        };
+
+        await this.redisManager.upsertItem(gpsKey, serverTime, newPosItem);
+
+        // Сохраняем в device ключ
+        const deviceData = this.createDeviceData(event, {
+          latitudeI,
+          longitudeI,
+          altitude: altitude || undefined,
+          time: posTime || undefined,
+          satsInView,
+        });
+
+        await this.saveToRedis(key, serverTime, deviceData, server, "position");
+      }
+    } catch (error) {
+      console.error(
+        "❌ Error saving position data to old schema:",
+        error.message
+      );
+    }
+  }
+
+  /**
+   * Сохраняет декодированные данные телеметрии в старую схему
+   */
+  async saveTelemetryDataToOldSchema(
+    server,
+    event,
+    key,
+    serverTime,
+    decodedTelemetryData
+  ) {
+    try {
+      const { type, variant } = decodedTelemetryData;
+
+      if (type === "deviceMetrics" && variant?.value) {
+        const deviceMetrics = variant.value;
+        await this.handleDeviceMetrics(
+          server,
+          event,
+          key,
+          serverTime,
+          deviceMetrics
+        );
+      } else if (type === "environmentMetrics" && variant?.value) {
+        const environmentMetrics = variant.value;
+        await this.handleEnvironmentMetrics(
+          server,
+          event,
+          key,
+          serverTime,
+          environmentMetrics
+        );
+      }
+    } catch (error) {
+      console.error(
+        "❌ Error saving telemetry data to old schema:",
+        error.message
+      );
     }
   }
 
