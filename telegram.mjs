@@ -248,7 +248,7 @@ const getGatewayInfoBatch = async (redis, gatewayIds) => {
       gatewayIdsList.push(gatewayId);
       promises.push(
         redis.hgetall(`device:${numericId}`),
-        redis.hgetall(`user:${numericId}`)
+        redis.hgetall(`user:${gatewayId}`)
       );
     }
 
@@ -296,7 +296,7 @@ const getDeviceStats = async (redis, deviceId) => {
       messagesData,
     ] = await Promise.all([
       redis.hgetall(`device:${numericId}`).catch(() => ({})),
-      redis.hgetall(`user:${numericId}`).catch(() => ({})),
+      redis.hgetall(`user:${deviceId}`).catch(() => ({})),
       redis.lrange(`gps:${numericId}`, -1, -1).catch(() => []),
       redis.lrange(`deviceMetrics:${numericId}`, -1, -1).catch(() => []),
       redis.lrange(`environmentMetrics:${numericId}`, -1, -1).catch(() => []),
