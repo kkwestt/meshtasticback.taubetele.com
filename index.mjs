@@ -601,114 +601,6 @@ class MeshtasticRedisClient {
   }
 
   /**
-   * Обрабатывает пользовательские события (СТАРАЯ СХЕМА)
-   */
-  async handleUserEvent(server, event, key, serverTime) {
-    try {
-      console.log(
-        `🔍 handleUserEvent called for device ${
-          event.from
-        }, has payload: ${!!event.data?.payload}, has portnum: ${!!event.data
-          ?.portnum}`
-      );
-
-      let userData;
-
-      // Проверяем есть ли уже декодированные данные в новой схеме
-      if (event.data?.id && event.data?.longName) {
-        // Новая схема - данные уже декодированы
-        userData = {
-          id: event.data.id,
-          longName: event.data.long_name || event.data.longName,
-          shortName: event.data.short_name || event.data.shortName,
-          macaddr: event.data.macaddr,
-          publicKey: event.data.public_key || event.data.publicKey,
-          hwModel: event.data.hw_model || event.data.hwModel,
-          role: event.data.role,
-        };
-        console.log(
-          `✅ handleUserEvent: Using pre-decoded data for device ${event.from}:`,
-          userData
-        );
-      } else if (event.data?.payload) {
-        // Нужно декодировать base64 payload
-        console.log(
-          `🔍 DEBUG: payload type: ${typeof event.data.payload}, value:`,
-          event.data.payload
-        );
-
-        // Проверяем что payload это строка
-        if (typeof event.data.payload === "string") {
-          userData = this.decodePayload("User", event.data.payload);
-          if (!userData) {
-            console.log(
-              `⚠️ handleUserEvent: Failed to decode User payload for device ${event.from}`
-            );
-            return;
-          }
-          console.log(
-            `✅ handleUserEvent: Successfully decoded user data for device ${event.from}:`,
-            userData
-          );
-        } else {
-          console.log(
-            `⚠️ handleUserEvent: Payload is not a string for device ${
-              event.from
-            }, type: ${typeof event.data.payload}`
-          );
-          return;
-        }
-      } else {
-        console.log(
-          `⚠️ handleUserEvent: No payload or pre-decoded data for device ${event.from}`
-        );
-        return;
-      }
-
-      console.log(`🔍 Extracted userData:`, userData);
-
-      const { shortName, longName, id, macaddr, publicKey, hwModel, role } =
-        userData;
-
-      console.log(
-        `🔍 Extracted fields: id=${id}, longName=${longName}, shortName=${shortName}`
-      );
-
-      const userRecord = {
-        from: event.from,
-        shortName,
-        longName,
-        macaddr: formatMacAddress(macaddr),
-        publicKey: bufferToHex(publicKey),
-        hwModel,
-        role,
-      };
-
-      console.log(`💾 About to save user data to user:${id}:`, userRecord);
-      console.log(
-        `💾 About to save device data to ${key} with serverTime:${serverTime}`
-      );
-
-      // Сохраняем данные пользователя отдельно
-      await this.redisManager.saveUserData(id, userRecord);
-      console.log(`✅ User data saved to user:${id}`);
-
-      // Сохраняем в device ключ
-      const deviceData = this.createDeviceData(event, userRecord);
-      console.log(`💾 Device data created:`, deviceData);
-      await this.saveToRedis(key, serverTime, deviceData, server, "user");
-      console.log(`✅ Device data saved to ${key}`);
-      console.log(`✅ handleUserEvent completed for device ${event.from}`);
-    } catch (error) {
-      console.error(
-        "❌ Error handling user event:",
-        error.message,
-        error.stack
-      );
-    }
-  }
-
-  /**
    * Сохраняет декодированные данные пользователя в старую схему
    */
   async saveUserDataToOldSchema(
@@ -719,13 +611,13 @@ class MeshtasticRedisClient {
     decodedUserData
   ) {
     try {
-      console.log(
-        `💾 Saving decoded user data to old schema for device ${event.from}:`,
-        decodedUserData
-      );
-
-      const { shortName, longName, id, macaddr, publicKey, hwModel, role } =
-        decodedUserData;
+      const id = decodedUserData.id;
+      const longName = decodedUserData.long_name || decodedUserData.longName;
+      const shortName = decodedUserData.short_name || decodedUserData.shortName;
+      const macaddr = decodedUserData.macaddr;
+      const publicKey = decodedUserData.public_key || decodedUserData.publicKey;
+      const hwModel = decodedUserData.hw_model || decodedUserData.hwModel;
+      const role = decodedUserData.role;
 
       const userRecord = {
         from: event.from,
@@ -739,18 +631,12 @@ class MeshtasticRedisClient {
 
       // Сохраняем данные пользователя отдельно в user:!hexId
       await this.redisManager.saveUserData(id, userRecord);
-      console.log(`✅ User data saved to user:${id}`);
 
       // Сохраняем в device ключ
       const deviceData = this.createDeviceData(event, userRecord);
       await this.saveToRedis(key, serverTime, deviceData, server, "user");
-      console.log(`✅ Device data saved to ${key}`);
     } catch (error) {
-      console.error(
-        "❌ Error saving user data to old schema:",
-        error.message,
-        error.stack
-      );
+      console.error("❌ Error saving user data to old schema:", error.message);
     }
   }
 
