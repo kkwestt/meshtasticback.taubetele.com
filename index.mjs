@@ -591,9 +591,6 @@ class MeshtasticRedisClient {
    */
   async handleUserEvent(server, event, key, serverTime) {
     try {
-      // Пропускаем если данные уже обработаны новой схемой (по portnum)
-      if (event.data?.portnum) return;
-
       if (!event.data?.payload) return;
 
       const userData = this.decodePayload("User", event.data.payload);
@@ -628,9 +625,6 @@ class MeshtasticRedisClient {
    */
   async handlePositionEvent(server, event, key, serverTime) {
     try {
-      // Пропускаем если данные уже обработаны новой схемой (по portnum)
-      if (event.data?.portnum) return;
-
       if (!event.data?.payload) return;
 
       const positionData = this.decodePayload("Position", event.data.payload);
@@ -678,9 +672,6 @@ class MeshtasticRedisClient {
    */
   async handleTelemetryEvent(server, event, key, serverTime) {
     try {
-      // Пропускаем если данные уже обработаны новой схемой (по portnum)
-      if (event.data?.portnum) return;
-
       if (!event.data?.payload) return;
 
       const telemetryData = this.decodePayload("Telemetry", event.data.payload);

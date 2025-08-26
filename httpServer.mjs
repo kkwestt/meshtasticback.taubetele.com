@@ -2,6 +2,7 @@ import express from "express";
 import compression from "compression";
 import cors from "cors";
 import { handleEndpointError } from "./utils.mjs";
+import { adminConfig } from "./config.mjs";
 
 /**
  * Оптимизированный HTTP сервер с улучшенными endpoints
@@ -644,6 +645,11 @@ export class HTTPServer {
 
         <form id="deleteForm">
             <div class="form-group">
+                <label for="password">Пароль админа:</label>
+                <input type="password" id="password" name="password" placeholder="Введите пароль" required>
+            </div>
+            
+            <div class="form-group">
                 <label for="deviceId">Device ID:</label>
                 <input type="text" id="deviceId" name="deviceId" placeholder="!015ba416 или 22782998" required>
             </div>
@@ -660,9 +666,15 @@ export class HTTPServer {
         document.getElementById('deleteForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const password = document.getElementById('password').value.trim();
             const deviceId = document.getElementById('deviceId').value.trim();
             const btn = document.getElementById('deleteBtn');
             const result = document.getElementById('result');
+            
+            if (!password) {
+                showResult('error', 'Введите пароль');
+                return;
+            }
             
             if (!deviceId) {
                 showResult('error', 'Введите Device ID');
@@ -682,13 +694,14 @@ export class HTTPServer {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ deviceId })
+                    body: JSON.stringify({ password, deviceId })
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
                     showResult('success', \`Успешно удалено \${data.deletedKeys} ключей для устройства \${deviceId}\`);
+                    document.getElementById('password').value = '';
                     document.getElementById('deviceId').value = '';
                 } else {
                     showResult('error', data.error || 'Ошибка при удалении');
@@ -724,7 +737,14 @@ export class HTTPServer {
    */
   async handleDeleteDevice(req, res) {
     try {
-      const { deviceId } = req.body;
+      const { password, deviceId } = req.body;
+
+      // Проверка пароля
+      if (!password || password !== adminConfig.password) {
+        return res.status(401).json({
+          error: "Неверный пароль",
+        });
+      }
 
       if (!deviceId || typeof deviceId !== "string") {
         return res.status(400).json({
@@ -746,13 +766,17 @@ export class HTTPServer {
       if (!hexRegex.test(trimmedId) && !numericRegex.test(trimmedId)) {
         return res.status(400).json({
           error:
-            "Invalid Device ID format. Use hex format (!015ba416) or numeric format (22782998)",
+            "Invalid Device ID format. Use hex format (!00112233) or numeric format (12345678)",
         });
       }
 
       // Удаляем все данные устройства
       const deletedKeys = await this.redisManager.deleteAllDeviceData(
         trimmedId
+      );
+
+      console.log(
+        `🔐 Admin deleted device data: ${trimmedId}, keys: ${deletedKeys}`
       );
 
       res.json({
