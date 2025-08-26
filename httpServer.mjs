@@ -21,6 +21,8 @@ export class HTTPServer {
    */
   setupMiddleware() {
     this.app.use(compression());
+    this.app.use(express.json());
+    this.app.use(express.urlencoded({ extended: true }));
     this.app.use(
       cors({
         origin: (origin, callback) => callback(null, origin || "*"),
@@ -47,6 +49,10 @@ export class HTTPServer {
    * Настраивает маршруты
    */
   setupRoutes() {
+    // Админ панель для удаления данных
+    this.app.get("/admin", this.handleAdminPage.bind(this));
+    this.app.post("/api/delete", this.handleDeleteDevice.bind(this));
+
     // Основные endpoints (должны быть ПЕРЕД общим обработчиком)
     this.app.get("/api", this.handleApiEndpoint.bind(this));
     this.app.get("/health", this.handleHealthCheck.bind(this));
@@ -510,6 +516,261 @@ export class HTTPServer {
   }
 
   /**
+   * Обрабатывает админ страницу для удаления данных
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  handleAdminPage(req, res) {
+    const html = `
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meshtastic - Админ панель</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #d32f2f;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        .delete-btn {
+            background: #d32f2f;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .delete-btn:hover {
+            background: #b71c1c;
+        }
+        .delete-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .examples {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .examples h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .examples code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚠️ Удаление данных устройства</h1>
+        
+        <div class="warning">
+            <strong>ВНИМАНИЕ!</strong> Это действие необратимо. Будут удалены ВСЕ данные устройства из Redis включая GPS, телеметрию, сообщения и пользовательские данные.
+        </div>
+
+        <div class="examples">
+            <h3>Примеры допустимых форматов:</h3>
+            <p>• Hex формат: <code>!015ba416</code></p>
+            <p>• Numeric формат: <code>22782998</code></p>
+        </div>
+
+        <form id="deleteForm">
+            <div class="form-group">
+                <label for="deviceId">Device ID:</label>
+                <input type="text" id="deviceId" name="deviceId" placeholder="!015ba416 или 22782998" required>
+            </div>
+            
+            <button type="submit" class="delete-btn" id="deleteBtn">
+                🗑️ Удалить все данные устройства
+            </button>
+        </form>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('deleteForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const deviceId = document.getElementById('deviceId').value.trim();
+            const btn = document.getElementById('deleteBtn');
+            const result = document.getElementById('result');
+            
+            if (!deviceId) {
+                showResult('error', 'Введите Device ID');
+                return;
+            }
+            
+            if (!confirm(\`Вы уверены, что хотите удалить ВСЕ данные устройства "\${deviceId}"?\\n\\nЭто действие необратимо!\`)) {
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Удаление...';
+            
+            try {
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ deviceId })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('success', \`Успешно удалено \${data.deletedKeys} ключей для устройства \${deviceId}\`);
+                    document.getElementById('deviceId').value = '';
+                } else {
+                    showResult('error', data.error || 'Ошибка при удалении');
+                }
+            } catch (error) {
+                showResult('error', 'Ошибка сети: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🗑️ Удалить все данные устройства';
+            }
+        });
+        
+        function showResult(type, message) {
+            const result = document.getElementById('result');
+            result.className = \`result \${type}\`;
+            result.textContent = message;
+            result.style.display = 'block';
+            setTimeout(() => {
+                result.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>`;
+
+    res.send(html);
+  }
+
+  /**
+   * Обрабатывает API запрос на удаление данных устройства
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleDeleteDevice(req, res) {
+    try {
+      const { deviceId } = req.body;
+
+      if (!deviceId || typeof deviceId !== "string") {
+        return res.status(400).json({
+          error: "Device ID is required and must be a string",
+        });
+      }
+
+      const trimmedId = deviceId.trim();
+      if (!trimmedId) {
+        return res.status(400).json({
+          error: "Device ID cannot be empty",
+        });
+      }
+
+      // Валидация формата Device ID (hex с ! или numeric)
+      const hexRegex = /^!([0-9a-fA-F]{8})$/;
+      const numericRegex = /^[0-9]+$/;
+
+      if (!hexRegex.test(trimmedId) && !numericRegex.test(trimmedId)) {
+        return res.status(400).json({
+          error:
+            "Invalid Device ID format. Use hex format (!015ba416) or numeric format (22782998)",
+        });
+      }
+
+      // Удаляем все данные устройства
+      const deletedKeys = await this.redisManager.deleteAllDeviceData(
+        trimmedId
+      );
+
+      res.json({
+        success: true,
+        deviceId: trimmedId,
+        deletedKeys: deletedKeys,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error("Error deleting device data:", error);
+      res.status(500).json({
+        error: "Internal server error",
+        message: error.message,
+      });
+    }
+  }
+
+  /**
    * Обрабатывает 404 ошибки
    * @param {Request} req - Express request
    * @param {Response} res - Express response
@@ -551,6 +812,12 @@ export class HTTPServer {
       console.log(`  СЛУЖЕБНЫЕ:`);
       console.log(`    GET /health              - Health check`);
       console.log(`    GET /stats               - Server statistics`);
+      console.log(`    GET /nodes               - List of all nodes`);
+      console.log(`  АДМИН:`);
+      console.log(
+        `    GET /admin               - Admin panel for device deletion`
+      );
+      console.log(`    POST /api/delete         - Delete all device data`);
       console.log(`  `);
       console.log(
         `  📋 Доступные portnum: TEXT_MESSAGE_APP, POSITION_APP, NODEINFO_APP,`

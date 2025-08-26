@@ -609,6 +609,126 @@ export class RedisManager {
   }
 
   /**
+   * Удаляет все данные устройства из Redis
+   * @param {string} deviceId - ID устройства в hex (!015ba416) или numeric (22782998) формате
+   * @returns {number} - Количество удаленных ключей
+   */
+  async deleteAllDeviceData(deviceId) {
+    try {
+      let hexId, numericId;
+
+      // Определяем формат и конвертируем
+      if (deviceId.startsWith("!")) {
+        // Hex формат: !015ba416
+        hexId = deviceId;
+        numericId = parseInt(deviceId.substring(1), 16).toString();
+      } else {
+        // Numeric формат: 22782998
+        numericId = deviceId;
+        hexId = `!${parseInt(deviceId).toString(16).padStart(8, "0")}`;
+      }
+
+      console.log(
+        `🗑️ Удаление всех данных для устройства: ${hexId} (${numericId})`
+      );
+
+      // Список всех возможных типов ключей
+      const keyPatterns = [
+        // Новая схема (по portnum)
+        `TEXT_MESSAGE_APP:${numericId}`,
+        `POSITION_APP:${numericId}`,
+        `NODEINFO_APP:${numericId}`,
+        `TELEMETRY_APP:${numericId}`,
+        `NEIGHBORINFO_APP:${numericId}`,
+        `WAYPOINT_APP:${numericId}`,
+        `MAP_REPORT_APP:${numericId}`,
+        `TRACEROUTE_APP:${numericId}`,
+
+        // Старая схема (по типам данных)
+        `device:${numericId}`,
+        `user:${hexId}`,
+        `gps:${numericId}`,
+        `deviceMetrics:${numericId}`,
+        `environmentMetrics:${numericId}`,
+        `message:${numericId}`,
+        `neighborInfo:${numericId}`,
+        `waypoint:${numericId}`,
+        `mapReport:${numericId}`,
+        `traceroute:${numericId}`,
+      ];
+
+      // Собираем все существующие ключи для удаления
+      const keysToDelete = [];
+
+      for (const pattern of keyPatterns) {
+        const exists = await this.redis.exists(pattern);
+        if (exists) {
+          keysToDelete.push(pattern);
+        }
+      }
+
+      // Ищем дополнительные ключи по паттернам (на случай если что-то пропустили)
+      const additionalPatterns = [`*:${numericId}`, `*:${hexId}`];
+
+      for (const pattern of additionalPatterns) {
+        try {
+          const keys = await this.redis.keys(pattern);
+          for (const key of keys) {
+            if (!keysToDelete.includes(key)) {
+              keysToDelete.push(key);
+            }
+          }
+        } catch (error) {
+          console.warn(
+            `Warning: couldn't search pattern ${pattern}: ${error.message}`
+          );
+        }
+      }
+
+      // Удаляем найденные ключи
+      let deletedCount = 0;
+      if (keysToDelete.length > 0) {
+        deletedCount = await this.redis.del(...keysToDelete);
+        console.log(
+          `✅ Удалено ${deletedCount} ключей для устройства ${hexId}:`,
+          keysToDelete
+        );
+      } else {
+        console.log(`ℹ️ Данные для устройства ${hexId} не найдены`);
+      }
+
+      // Очищаем кэш для этого устройства
+      this.invalidateUserCache(hexId);
+      this.invalidateUserCache(numericId);
+
+      // Очищаем дополнительные кэши
+      const cacheKeysToDelete = [];
+      this.cache.forEach((value, key) => {
+        if (key.includes(hexId) || key.includes(numericId)) {
+          cacheKeysToDelete.push(key);
+        }
+      });
+
+      cacheKeysToDelete.forEach((key) => {
+        this.cache.delete(key);
+        this.cacheTimestamps.delete(key);
+      });
+
+      if (cacheKeysToDelete.length > 0) {
+        console.log(`🗑️ Очищено ${cacheKeysToDelete.length} записей из кэша`);
+      }
+
+      return deletedCount;
+    } catch (error) {
+      console.error(
+        `Error deleting device data for ${deviceId}:`,
+        error.message
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Отключается от Redis
    */
   async disconnect() {
