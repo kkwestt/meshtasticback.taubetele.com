@@ -921,13 +921,15 @@ export class RedisManager {
     }
 
     // Возвращаем стандартизированную структуру
-    return {
+    const result = {
       longName: filteredData.longName || "",
       shortName: filteredData.shortName || "",
       longitude: filteredData.longitude || 0,
       latitude: filteredData.latitude || 0,
       s_time: currentTime,
     };
+
+    return result;
   }
 
   /**
