@@ -605,15 +605,35 @@ const formatDeviceStats = async (stats, redis) => {
       const uptimeSeconds =
         actualMetrics.uptimeSeconds || actualMetrics.uptime_seconds;
 
-      if (batteryLevel !== undefined && batteryLevel !== null)
+      if (
+        batteryLevel !== undefined &&
+        batteryLevel !== null &&
+        typeof batteryLevel === "number"
+      )
         message += `🔋 <b>Батарея:</b> ${batteryLevel}%\n`;
-      if (voltage !== undefined && voltage !== null)
+      if (
+        voltage !== undefined &&
+        voltage !== null &&
+        typeof voltage === "number"
+      )
         message += `⚡ <b>Напряжение:</b> ${voltage}V\n`;
-      if (channelUtilization !== undefined && channelUtilization !== null)
+      if (
+        channelUtilization !== undefined &&
+        channelUtilization !== null &&
+        typeof channelUtilization === "number"
+      )
         message += `📶 <b>Канал:</b> ${channelUtilization.toFixed(1)}%\n`;
-      if (airUtilTx !== undefined && airUtilTx !== null)
+      if (
+        airUtilTx !== undefined &&
+        airUtilTx !== null &&
+        typeof airUtilTx === "number"
+      )
         message += `📡 <b>Air TX:</b> ${airUtilTx.toFixed(1)}%\n`;
-      if (uptimeSeconds !== undefined && uptimeSeconds !== null) {
+      if (
+        uptimeSeconds !== undefined &&
+        uptimeSeconds !== null &&
+        typeof uptimeSeconds === "number"
+      ) {
         const uptimeHours = Math.floor(uptimeSeconds / 3600);
         if (uptimeHours > 0) {
           message += `⏰ <b>Время работы:</b> ${formatUptime(uptimeHours)}\n`;

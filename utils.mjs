@@ -51,7 +51,7 @@ export const formatMacAddress = (buffer) => {
  * @returns {number} - Округленное число
  */
 export const round = (num, decimalPlaces = 0) => {
-  if (typeof num !== "number" || isNaN(num)) return 0;
+  if (typeof num !== "number" || isNaN(num)) return num; // Возвращаем исходное значение вместо 0
   const factor = Math.pow(10, decimalPlaces);
   return Math.round(num * factor) / factor;
 };
@@ -115,21 +115,46 @@ export const isValidPacket = (arrayBuffer) => {
  * @returns {boolean} - Валидность метрик
  */
 export const isValidDeviceMetrics = (metrics) => {
-  const { batteryLevel, voltage, channelUtilization, airUtilTx } = metrics;
+  const {
+    batteryLevel,
+    voltage,
+    channelUtilization,
+    airUtilTx,
+    uptimeSeconds,
+  } = metrics;
 
   const hasValidBattery =
-    batteryLevel !== undefined && batteryLevel !== null && batteryLevel >= 0;
+    batteryLevel !== undefined &&
+    batteryLevel !== null &&
+    typeof batteryLevel === "number" &&
+    batteryLevel >= 0;
   const hasValidVoltage =
-    voltage !== undefined && voltage !== null && !isNaN(voltage);
+    voltage !== undefined &&
+    voltage !== null &&
+    typeof voltage === "number" &&
+    !isNaN(voltage);
   const hasValidChannelUtil =
     channelUtilization !== undefined &&
     channelUtilization !== null &&
+    typeof channelUtilization === "number" &&
     channelUtilization >= 0;
   const hasValidAirUtil =
-    airUtilTx !== undefined && airUtilTx !== null && airUtilTx >= 0;
+    airUtilTx !== undefined &&
+    airUtilTx !== null &&
+    typeof airUtilTx === "number" &&
+    airUtilTx >= 0;
+  const hasValidUptime =
+    uptimeSeconds !== undefined &&
+    uptimeSeconds !== null &&
+    typeof uptimeSeconds === "number" &&
+    uptimeSeconds >= 0;
 
   return (
-    hasValidBattery || hasValidVoltage || hasValidChannelUtil || hasValidAirUtil
+    hasValidBattery ||
+    hasValidVoltage ||
+    hasValidChannelUtil ||
+    hasValidAirUtil ||
+    hasValidUptime
   );
 };
 
