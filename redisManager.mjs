@@ -897,14 +897,23 @@ export class RedisManager {
     });
 
     // Проверяем наличие геолокации или имени
+    // Строгая проверка координат - должны быть числами и не равны 0
     const hasLocation =
-      filteredData.longitude !== 0 && filteredData.latitude !== 0;
+      typeof filteredData.longitude === "number" &&
+      typeof filteredData.latitude === "number" &&
+      filteredData.longitude !== 0 &&
+      filteredData.latitude !== 0;
     const hasName =
       (filteredData.longName && filteredData.longName.trim() !== "") ||
       (filteredData.shortName && filteredData.shortName.trim() !== "");
 
     // Устройство валидно, если есть либо геолокация, либо имя
-    const hasValidData = hasLocation || hasName;
+    // НО: если координаты (0,0), то обязательно должно быть имя
+    const hasValidData =
+      hasLocation ||
+      (hasName &&
+        (filteredData.longitude === 0 || filteredData.longitude === "0") &&
+        (filteredData.latitude === 0 || filteredData.latitude === "0"));
 
     // Если нет полезных данных, возвращаем null
     if (!hasValidData) {
