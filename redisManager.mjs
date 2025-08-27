@@ -768,8 +768,14 @@ export class RedisManager {
         updateData.longName !== undefined ||
         updateData.shortName !== undefined
       ) {
-        fieldsToUpdate.longName = updateData.longName;
-        fieldsToUpdate.shortName = updateData.shortName;
+        // Обновляем только те поля, которые действительно пришли
+        if (updateData.longName !== undefined) {
+          fieldsToUpdate.longName = updateData.longName;
+        }
+        if (updateData.shortName !== undefined) {
+          fieldsToUpdate.shortName = updateData.shortName;
+        }
+        console.log(`🗺️ [UPDATE] Updating node info for device ${deviceId}:`, fieldsToUpdate);
       }
 
       // Всегда обновляем время
