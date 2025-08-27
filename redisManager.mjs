@@ -748,28 +748,41 @@ export class RedisManager {
       const key = `dots:${deviceId}`;
       const currentTime = Date.now();
 
-      // Фильтруем только нужные поля
-      const filteredData = {};
-      const allowedFields = ["longName", "shortName", "longitude", "latitude"];
+      // Сначала читаем существующие данные
+      const existingData = await this.redis.hgetall(key);
 
-      Object.entries(updateData).forEach(([key, value]) => {
-        if (
-          allowedFields.includes(key) &&
-          value !== undefined &&
-          value !== null
-        ) {
-          filteredData[key] = value;
-        }
-      });
+      // Определяем, какие поля нужно обновить
+      const fieldsToUpdate = {};
 
-      const dotData = {
-        // Только базовые поля согласно требованиям
-        longName: filteredData.longName || "",
-        shortName: filteredData.shortName || "",
-        longitude: filteredData.longitude || 0,
-        latitude: filteredData.latitude || 0,
-        s_time: currentTime,
+      // Если есть данные о позиции - обновляем координаты
+      if (
+        updateData.longitude !== undefined ||
+        updateData.latitude !== undefined
+      ) {
+        fieldsToUpdate.longitude = updateData.longitude;
+        fieldsToUpdate.latitude = updateData.latitude;
+      }
+
+      // Если есть данные о node info - обновляем имена
+      if (
+        updateData.longName !== undefined ||
+        updateData.shortName !== undefined
+      ) {
+        fieldsToUpdate.longName = updateData.longName;
+        fieldsToUpdate.shortName = updateData.shortName;
+      }
+
+      // Всегда обновляем время
+      fieldsToUpdate.s_time = currentTime;
+
+      // Объединяем существующие данные с обновляемыми полями
+      const mergedData = {
+        ...existingData,
+        ...fieldsToUpdate,
       };
+
+      // Используем общий метод фильтрации для объединенных данных
+      const dotData = this._filterDotData(mergedData, currentTime);
 
       // Преобразуем числовые значения в строки для Redis
       const redisData = {};
@@ -800,13 +813,65 @@ export class RedisManager {
    * @returns {Object} - Стандартизированные данные
    */
   _createStandardDotData(parsedData, deviceId) {
-    return {
+    // Нормализуем названия полей для совместимости со старой структурой
+    const normalizedData = {
       longName: parsedData.longName || parsedData["Long Name"] || "",
       shortName: parsedData.shortName || parsedData["Short Name"] || "",
       longitude: parsedData.longitude || 0,
       latitude: parsedData.latitude || 0,
       s_time: parsedData.s_time || 0,
     };
+
+    return this._filterDotData(normalizedData, parsedData.s_time || 0);
+  }
+
+  /**
+   * Фильтрует и стандартизирует данные для dots
+   * @param {Object} data - Входные данные
+   * @param {number} timestamp - Временная метка (если не указана, используется текущее время)
+   * @returns {Object} - Отфильтрованные и стандартизированные данные
+   */
+  _filterDotData(data, timestamp = null) {
+    const currentTime = timestamp || Date.now();
+
+    // Определяем разрешенные поля
+    const allowedFields = ["longName", "shortName", "longitude", "latitude"];
+
+    // Фильтруем только базовые поля и нормализуем значения
+    const filteredData = {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (
+        allowedFields.includes(key) &&
+        value !== undefined &&
+        value !== null
+      ) {
+        // Нормализуем числовые значения
+        if (key === "longitude" || key === "latitude") {
+          const numValue = parseFloat(value);
+          if (!isNaN(numValue)) {
+            filteredData[key] = numValue;
+          }
+        } else {
+          // Для строковых полей сохраняем значение, даже если пустое (может быть обновление)
+          filteredData[key] = value;
+        }
+      }
+    });
+
+    // Возвращаем стандартизированную структуру
+    const result = {
+      longName: filteredData.longName || "",
+      shortName: filteredData.shortName || "",
+      longitude: filteredData.longitude || 0,
+      latitude: filteredData.latitude || 0,
+      s_time: currentTime,
+    };
+
+    console.log(`🗺️ [FILTER] Input data:`, data);
+    console.log(`🗺️ [FILTER] Filtered data:`, filteredData);
+    console.log(`🗺️ [FILTER] Final result:`, result);
+
+    return result;
   }
 
   /**
@@ -820,28 +885,8 @@ export class RedisManager {
       const key = `dots:${deviceId}`;
       const currentTime = Date.now();
 
-      // Фильтруем только базовые поля
-      const filteredData = {};
-      const allowedFields = ["longName", "shortName", "longitude", "latitude"];
-
-      Object.entries(initialData).forEach(([key, value]) => {
-        if (
-          allowedFields.includes(key) &&
-          value !== undefined &&
-          value !== null
-        ) {
-          filteredData[key] = value;
-        }
-      });
-
-      // Создаем базовую структуру
-      const baseData = {
-        longName: filteredData.longName || "",
-        shortName: filteredData.shortName || "",
-        longitude: filteredData.longitude || 0,
-        latitude: filteredData.latitude || 0,
-        s_time: currentTime,
-      };
+      // Используем общий метод фильтрации
+      const baseData = this._filterDotData(initialData, currentTime);
 
       // Преобразуем в формат для Redis
       const redisData = {};
