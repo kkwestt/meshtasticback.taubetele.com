@@ -775,7 +775,6 @@ export class RedisManager {
         if (updateData.shortName !== undefined) {
           fieldsToUpdate.shortName = updateData.shortName;
         }
-        console.log(`🗺️ [UPDATE] Updating node info for device ${deviceId}:`, fieldsToUpdate);
       }
 
       // Всегда обновляем время
@@ -865,19 +864,13 @@ export class RedisManager {
     });
 
     // Возвращаем стандартизированную структуру
-    const result = {
+    return {
       longName: filteredData.longName || "",
       shortName: filteredData.shortName || "",
       longitude: filteredData.longitude || 0,
       latitude: filteredData.latitude || 0,
       s_time: currentTime,
     };
-
-    console.log(`🗺️ [FILTER] Input data:`, data);
-    console.log(`🗺️ [FILTER] Filtered data:`, filteredData);
-    console.log(`🗺️ [FILTER] Final result:`, result);
-
-    return result;
   }
 
   /**
@@ -998,19 +991,12 @@ export class RedisManager {
         args: [key],
       }));
 
-      console.log(`🗺️ [READ] Found ${keys.length} dots keys:`, keys);
-
       const results = await executeRedisPipeline(this.redis, operations);
 
       const allDots = {};
       keys.forEach((key, index) => {
         const deviceId = key.split(":")[1]; // Извлекаем ID из ключа dots:1234567
         const data = results[index];
-
-        console.log(
-          `🗺️ [READ] Processing key ${key}, deviceId: ${deviceId}, data:`,
-          data
-        );
 
         if (data && Object.keys(data).length > 0) {
           // Парсим данные как в getDotData

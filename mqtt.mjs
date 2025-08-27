@@ -29,7 +29,7 @@ export class MQTTManager {
    * @param {Array} servers - Массив серверов для подключения
    */
   async connectToAllServers(servers) {
-    console.log(`🚀 Подключение к ${servers.length} серверам...\n`);
+    // console.log(`🚀 Подключение к ${servers.length} серверам...\n`);
 
     // Параллельно подключаемся ко всем серверам
     const connectionPromises = servers.map((server) =>
@@ -169,7 +169,7 @@ export class MQTTManager {
    */
   setupClientEventHandlers(client, server, connectionInfo, resolve, reject) {
     client.on("connect", () => {
-      console.log(`✅ [${server.name}] Подключен`);
+      // console.log(`✅ [${server.name}] Подключен`);
       connectionInfo.isConnected = true;
       connectionInfo.reconnectAttempts = 0;
 

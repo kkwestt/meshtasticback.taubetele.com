@@ -437,16 +437,9 @@ export class HTTPServer {
   async handleDotsEndpoint(req, res) {
     try {
       const startTime = Date.now();
-      console.log(`🌐 [HTTP] GET /dots request received`);
-
       const dots = await this.redisManager.getAllDotData();
 
       const responseTime = Date.now() - startTime;
-      console.log(
-        `🌐 [HTTP] GET /dots response sent in ${responseTime}ms, count: ${
-          Object.keys(dots).length
-        }`
-      );
 
       // Добавляем заголовки кэширования
       res.set({

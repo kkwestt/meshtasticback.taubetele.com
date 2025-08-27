@@ -156,12 +156,12 @@ const connectToMqtt = (server, callback) => {
     ];
 
     client.on("connect", () => {
-      console.log(`Connected to MQTT server: ${server.name}`);
+      // console.log(`Connected to MQTT server: ${server.name}`);
       reconnectAttempts = 0;
 
       client.subscribe(topics, (err) => {
         if (!err) {
-          console.log(`Subscribed to topics on ${server.name}`);
+          // console.log(`Subscribed to topics on ${server.name}`);
         } else {
           console.error(`Subscription error on ${server.name}:`, err.message);
         }

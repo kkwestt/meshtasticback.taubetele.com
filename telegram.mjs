@@ -23,7 +23,7 @@ const formatHopCount = (hop) => {
 let bot = null;
 if (botSettings.ENABLE && botSettings.BOT_TOKEN) {
   bot = new Telegraf(botSettings.BOT_TOKEN);
-  console.log("Telegram bot initialized");
+  // console.log("Telegram bot initialized");
 }
 
 const messageGroups = new Map();

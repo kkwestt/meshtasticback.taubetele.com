@@ -53,7 +53,7 @@ class MeshtasticRedisClient {
    */
   async init() {
     try {
-      console.log("🚀 Инициализация Meshtastic MQTT клиента...");
+      // console.log("🚀 Инициализация Meshtastic MQTT клиента...");
 
       // Проверяем protobufs
       this.checkProtobufs();
@@ -73,7 +73,7 @@ class MeshtasticRedisClient {
       // Инициализируем MQTT
       await this.initializeMqtt();
 
-      console.log("✅ Инициализация завершена успешно!");
+      // console.log("✅ Инициализация завершена успешно!");
     } catch (error) {
       console.error("❌ Ошибка инициализации:", error);
       process.exit(1);
@@ -119,7 +119,7 @@ class MeshtasticRedisClient {
         RouteDiscovery: root.lookupType("RouteDiscovery"),
       };
 
-      console.log("✅ Protobuf схемы успешно загружены");
+      // console.log("✅ Protobuf схемы успешно загружены");
     } catch (error) {
       console.error("❌ Ошибка загрузки protobuf схем:", error);
       throw error;
@@ -137,7 +137,7 @@ class MeshtasticRedisClient {
       // Запускаем очистку кэша
       this.redisManager.startCacheCleanup();
 
-      console.log("✅ Redis подключен и настроен");
+      // console.log("✅ Redis подключен и настроен");
     } catch (error) {
       console.error("❌ Ошибка подключения к Redis:", error.message);
       throw error;
