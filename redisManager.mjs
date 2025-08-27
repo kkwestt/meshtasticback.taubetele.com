@@ -20,7 +20,7 @@ const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
  * - latitude - Широта (если есть геолокация)
  * - s_time - Серверное время обновления записи
  *
- * Правило: должно быть либо геолокация, либо имя, но не оба одновременно.
+ * Правило: должно быть либо геолокация, либо имя. Пакеты приходят раздельно.
  * Устройства без имени и геолокации не сохраняются в dots:.
  */
 export class RedisManager {
@@ -857,8 +857,9 @@ export class RedisManager {
    * @param {number} timestamp - Временная метка (если не указана, используется текущее время)
    * @returns {Object|null} - Отфильтрованные и стандартизированные данные или null если данные невалидны
    *
-   * Логика валидации: должно быть либо геолокация (longitude, latitude), либо имя (longName, shortName),
-   * но не оба одновременно. Если данные не соответствуют этому правилу, возвращается null.
+   * Логика валидации: должно быть либо геолокация (longitude, latitude), либо имя (longName, shortName).
+   * Пакеты приходят раздельно - либо с координатами, либо с именами. Если нет ни того, ни другого,
+   * возвращается null.
    */
   _filterDotData(data, timestamp = null) {
     const currentTime = timestamp || Date.now();
@@ -887,15 +888,15 @@ export class RedisManager {
       }
     });
 
-    // Проверяем, есть ли либо геолокация, либо имя (но не одновременно)
+    // Проверяем наличие геолокации или имени
     const hasLocation =
       filteredData.longitude !== 0 && filteredData.latitude !== 0;
     const hasName =
       (filteredData.longName && filteredData.longName.trim() !== "") ||
       (filteredData.shortName && filteredData.shortName.trim() !== "");
 
-    // Должно быть либо геолокация, либо имя, но не оба одновременно
-    const hasValidData = (hasLocation && !hasName) || (!hasLocation && hasName);
+    // Устройство валидно, если есть либо геолокация, либо имя
+    const hasValidData = hasLocation || hasName;
 
     // Если нет полезных данных, возвращаем null
     if (!hasValidData) {
