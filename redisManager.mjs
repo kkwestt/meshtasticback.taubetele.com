@@ -789,6 +789,17 @@ export class RedisManager {
       // Используем общий метод фильтрации для объединенных данных
       const dotData = this._filterDotData(mergedData, currentTime);
 
+      // Если нет полезных данных, не сохраняем в Redis
+      if (!dotData) {
+        // Проверяем, есть ли уже данные в Redis
+        const existingKeys = Object.keys(existingData);
+        if (existingKeys.length > 0) {
+          // Если данные были, но стали бесполезными - удаляем ключ
+          await this.redis.del(key);
+        }
+        return; // Выходим без сохранения
+      }
+
       // Преобразуем числовые значения в строки для Redis
       const redisData = {};
       Object.entries(dotData).forEach(([key, value]) => {
@@ -827,7 +838,14 @@ export class RedisManager {
       s_time: parsedData.s_time || 0,
     };
 
-    return this._filterDotData(normalizedData, parsedData.s_time || 0);
+    const result = this._filterDotData(normalizedData, parsedData.s_time || 0);
+
+    // Если нет полезных данных, возвращаем null
+    if (!result) {
+      return null;
+    }
+
+    return result;
   }
 
   /**
@@ -863,6 +881,17 @@ export class RedisManager {
       }
     });
 
+    // Проверяем, есть ли хоть какие-то полезные данные
+    const hasValidData =
+      (filteredData.longName && filteredData.longName.trim() !== "") ||
+      (filteredData.shortName && filteredData.shortName.trim() !== "") ||
+      (filteredData.longitude !== 0 && filteredData.latitude !== 0);
+
+    // Если нет полезных данных, возвращаем null
+    if (!hasValidData) {
+      return null;
+    }
+
     // Возвращаем стандартизированную структуру
     return {
       longName: filteredData.longName || "",
@@ -886,6 +915,11 @@ export class RedisManager {
 
       // Используем общий метод фильтрации
       const baseData = this._filterDotData(initialData, currentTime);
+
+      // Если нет полезных данных, не создаем запись
+      if (!baseData) {
+        return null;
+      }
 
       // Преобразуем в формат для Redis
       const redisData = {};
@@ -1019,7 +1053,10 @@ export class RedisManager {
             deviceId
           );
 
-          allDots[deviceId] = standardData;
+          // Добавляем только устройства с полезными данными
+          if (standardData) {
+            allDots[deviceId] = standardData;
+          }
         }
       });
 
