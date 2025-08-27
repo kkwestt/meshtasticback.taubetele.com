@@ -724,7 +724,8 @@ class MeshtasticRedisClient {
     decodedTelemetryData
   ) {
     try {
-      const { type, variant } = decodedTelemetryData.rawData || decodedTelemetryData;
+      const { type, variant } =
+        decodedTelemetryData.rawData || decodedTelemetryData;
 
       if (type === "deviceMetrics" && variant?.value) {
         const deviceMetrics = variant.value;
