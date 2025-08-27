@@ -73,6 +73,10 @@ export class HTTPServer {
     // Nodes endpoint - список всех устройств
     this.app.get("/nodes", this.handleNodesEndpoint.bind(this));
 
+    // Dots endpoint - данные для карты
+    this.app.get("/dots", this.handleDotsEndpoint.bind(this));
+    this.app.get("/dots/:deviceId", this.handleSingleDotEndpoint.bind(this));
+
     // Endpoint для формата portnumName:deviceId
     this.app.get(
       "/:portnumNameAndDeviceId",
@@ -416,6 +420,61 @@ export class HTTPServer {
       res.json(nodes);
     } catch (error) {
       handleEndpointError(error, res, "Nodes endpoint");
+    }
+  }
+
+  /**
+   * Обрабатывает /dots endpoint - возвращает все данные для карты
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleDotsEndpoint(req, res) {
+    try {
+      const dots = await this.redisManager.getAllDotData();
+
+      res.json({
+        timestamp: Date.now(),
+        count: Object.keys(dots).length,
+        data: dots,
+      });
+    } catch (error) {
+      handleEndpointError(error, res, "Dots endpoint");
+    }
+  }
+
+  /**
+   * Обрабатывает /dots/:deviceId endpoint - возвращает данные конкретной точки
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleSingleDotEndpoint(req, res) {
+    try {
+      const { deviceId } = req.params;
+
+      if (!deviceId || deviceId.length === 0) {
+        return res.status(400).json({ error: "Invalid device ID" });
+      }
+
+      const dotData = await this.redisManager.getDotData(deviceId);
+
+      if (!dotData) {
+        return res.status(404).json({
+          error: "Device not found",
+          deviceId: deviceId,
+        });
+      }
+
+      res.json({
+        device_id: deviceId,
+        timestamp: Date.now(),
+        data: dotData,
+      });
+    } catch (error) {
+      handleEndpointError(
+        error,
+        res,
+        `Single dot endpoint (${req.params.deviceId})`
+      );
     }
   }
 
@@ -837,6 +896,8 @@ export class HTTPServer {
       console.log(`    GET /health              - Health check`);
       console.log(`    GET /stats               - Server statistics`);
       console.log(`    GET /nodes               - List of all nodes`);
+      console.log(`    GET /dots                - All map dots data`);
+      console.log(`    GET /dots/:deviceId      - Single device dot data`);
       console.log(`  АДМИН:`);
       console.log(
         `    GET /admin               - Admin panel for device deletion`

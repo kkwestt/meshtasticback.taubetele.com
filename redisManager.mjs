@@ -644,6 +644,9 @@ export class RedisManager {
         `MAP_REPORT_APP:${numericId}`,
         `TRACEROUTE_APP:${numericId}`,
 
+        // Данные для карты
+        `dots:${numericId}`,
+
         // Старая схема (по типам данных)
         `device:${numericId}`,
         `user:${hexId}`,
@@ -726,6 +729,178 @@ export class RedisManager {
       );
       throw error;
     }
+  }
+
+  /**
+   * Обновляет данные точки для карты
+   * @param {string} deviceId - ID устройства (numeric)
+   * @param {Object} updateData - Данные для обновления
+   */
+  async updateDotData(deviceId, updateData) {
+    try {
+      const key = `dots:${deviceId}`;
+      const currentTime = Date.now();
+
+      // Получаем текущие данные
+      const existingData = await this.redis.hgetall(key);
+
+      // Генерируем hex_id из deviceId
+      const hexId = `!${parseInt(deviceId).toString(16).padStart(8, "0")}`;
+
+      // Создаем объект с новыми данными
+      const dotData = {
+        // Сохраняем существующие данные
+        ...existingData,
+        // Обновляем время последнего обновления
+        last_updated: currentTime,
+        device_id: deviceId,
+        hex_id: hexId,
+        // Добавляем новые данные
+        ...updateData,
+      };
+
+      // Преобразуем числовые значения в строки для Redis
+      const redisData = {};
+      Object.entries(dotData).forEach(([key, value]) => {
+        if (typeof value === "object" && value !== null) {
+          redisData[key] = JSON.stringify(value);
+        } else {
+          redisData[key] = String(value);
+        }
+      });
+
+      await this.redis.hset(key, redisData);
+
+      // Инвалидируем кэш
+      this.invalidateDotCache(deviceId);
+
+      // console.log(`🗺️ Обновлены данные карты для устройства ${deviceId}`);
+    } catch (error) {
+      console.error(`Error updating dot data for ${deviceId}:`, error.message);
+    }
+  }
+
+  /**
+   * Получает данные точки для карты
+   * @param {string} deviceId - ID устройства (numeric)
+   * @returns {Object} - Данные точки
+   */
+  async getDotData(deviceId) {
+    const cacheKey = `dot_${deviceId}`;
+
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      const key = `dots:${deviceId}`;
+      const data = await this.redis.hgetall(key);
+
+      if (!data || Object.keys(data).length === 0) {
+        return null;
+      }
+
+      // Парсим JSON поля обратно
+      const parsedData = {};
+      Object.entries(data).forEach(([key, value]) => {
+        try {
+          // Пытаемся распарсить как JSON
+          parsedData[key] = JSON.parse(value);
+        } catch {
+          // Если не JSON, оставляем как строку (или конвертируем числа)
+          if (!isNaN(value) && value !== "") {
+            parsedData[key] = Number(value);
+          } else {
+            parsedData[key] = value;
+          }
+        }
+      });
+
+      // Кэшируем результат
+      this.cache.set(cacheKey, parsedData);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return parsedData;
+    } catch (error) {
+      console.error(`Error getting dot data for ${deviceId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Получает все данные точек для карты
+   * @returns {Object} - Объект с данными всех точек
+   */
+  async getAllDotData() {
+    const cacheKey = "all_dots";
+
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      const pattern = "dots:*";
+      const keys = await this.redis.keys(pattern);
+
+      if (keys.length === 0) {
+        return {};
+      }
+
+      // Получаем данные для всех ключей параллельно
+      const operations = keys.map((key) => ({
+        command: "hgetall",
+        args: [key],
+      }));
+
+      const results = await executeRedisPipeline(this.redis, operations);
+
+      const allDots = {};
+      keys.forEach((key, index) => {
+        const deviceId = key.split(":")[1]; // Извлекаем ID из ключа dots:1234567
+        const data = results[index];
+
+        if (data && Object.keys(data).length > 0) {
+          // Парсим данные как в getDotData
+          const parsedData = {};
+          Object.entries(data).forEach(([dataKey, value]) => {
+            try {
+              parsedData[dataKey] = JSON.parse(value);
+            } catch {
+              if (!isNaN(value) && value !== "") {
+                parsedData[dataKey] = Number(value);
+              } else {
+                parsedData[dataKey] = value;
+              }
+            }
+          });
+
+          allDots[deviceId] = parsedData;
+        }
+      });
+
+      // Кэшируем результат
+      this.cache.set(cacheKey, allDots);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return allDots;
+    } catch (error) {
+      console.error("Error getting all dot data:", error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Инвалидирует кэш для dot данных
+   * @param {string} deviceId - ID устройства
+   */
+  invalidateDotCache(deviceId) {
+    const cacheKey = `dot_${deviceId}`;
+    this.cache.delete(cacheKey);
+    this.cacheTimestamps.delete(cacheKey);
+
+    // Также инвалидируем кэш всех точек
+    this.cache.delete("all_dots");
+    this.cacheTimestamps.delete("all_dots");
   }
 
   /**

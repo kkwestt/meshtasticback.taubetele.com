@@ -438,6 +438,9 @@ class MeshtasticRedisClient {
       const key = `device:${from}`;
       const serverTime = Date.now();
 
+      // Обновляем время последней активности для карты [[memory:3665001]]
+      await this.updateDotActivityTime(from, event, server);
+
       // Сохраняем все расшифрованные сообщения по portnum
       if (event.data?.portnum) {
         // Декодируем payload если он есть
@@ -657,6 +660,14 @@ class MeshtasticRedisClient {
       // Сохраняем в device ключ
       const deviceData = this.createDeviceData(event, userRecord);
       await this.saveToRedis(key, serverTime, deviceData, server, "user");
+
+      // Обновляем информацию об устройстве в dots ключе
+      await this.redisManager.updateDotData(event.from, {
+        short_name: shortName,
+        long_name: longName,
+        hw_model: hwModel,
+        role,
+      });
     } catch (error) {
       console.error("❌ Error saving user data to old schema:", error.message);
     }
@@ -704,6 +715,18 @@ class MeshtasticRedisClient {
         });
 
         await this.saveToRedis(key, serverTime, deviceData, server, "position");
+
+        // Обновляем геолокацию в dots ключе
+        const latitude = latitudeI / 1e7;
+        const longitude = longitudeI / 1e7;
+
+        await this.redisManager.updateDotData(event.from, {
+          latitude,
+          longitude,
+          altitude: altitude || undefined,
+          sats_in_view: satsInView,
+          position_time: posTime || undefined,
+        });
       }
     } catch (error) {
       console.error(
@@ -897,6 +920,15 @@ class MeshtasticRedisClient {
         server,
         "deviceMetrics"
       );
+
+      // Обновляем основные метрики в dots ключе
+      await this.redisManager.updateDotData(event.from, {
+        battery_level: batteryLevel,
+        voltage,
+        channel_utilization: channelUtilization,
+        air_util_tx: airUtilTx,
+        uptime_seconds: uptimeSeconds,
+      });
     }
   }
 
@@ -1138,6 +1170,22 @@ class MeshtasticRedisClient {
     buf.writeUInt32LE(blockCounter, 12);
 
     return buf;
+  }
+
+  /**
+   * Обновляет время активности и соответствующие данные для карты
+   */
+  async updateDotActivityTime(from, event, server) {
+    try {
+      const updateData = {
+        server: server.name,
+        gateway: event.gatewayId,
+      };
+
+      await this.redisManager.updateDotData(from, updateData);
+    } catch (error) {
+      console.error("Error updating dot activity time:", error.message);
+    }
   }
 
   /**
