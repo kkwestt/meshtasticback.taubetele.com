@@ -14,11 +14,14 @@ const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
  * Оптимизированный Redis Manager с batch операциями и кэшированием
  *
  * Структура данных для ключа dots:${deviceId}:
- * - longName - Длинное имя устройства
- * - shortName - Короткое имя устройства
- * - longitude - Долгота
- * - latitude - Широта
+ * - longName - Длинное имя устройства (если есть имя)
+ * - shortName - Короткое имя устройства (если есть имя)
+ * - longitude - Долгота (если есть геолокация)
+ * - latitude - Широта (если есть геолокация)
  * - s_time - Серверное время обновления записи
+ *
+ * Правило: должно быть либо геолокация, либо имя, но не оба одновременно.
+ * Устройства без имени и геолокации не сохраняются в dots:.
  */
 export class RedisManager {
   constructor(config) {
@@ -852,7 +855,10 @@ export class RedisManager {
    * Фильтрует и стандартизирует данные для dots
    * @param {Object} data - Входные данные
    * @param {number} timestamp - Временная метка (если не указана, используется текущее время)
-   * @returns {Object} - Отфильтрованные и стандартизированные данные
+   * @returns {Object|null} - Отфильтрованные и стандартизированные данные или null если данные невалидны
+   *
+   * Логика валидации: должно быть либо геолокация (longitude, latitude), либо имя (longName, shortName),
+   * но не оба одновременно. Если данные не соответствуют этому правилу, возвращается null.
    */
   _filterDotData(data, timestamp = null) {
     const currentTime = timestamp || Date.now();
@@ -881,11 +887,15 @@ export class RedisManager {
       }
     });
 
-    // Проверяем, есть ли хоть какие-то полезные данные
-    const hasValidData =
+    // Проверяем, есть ли либо геолокация, либо имя (но не одновременно)
+    const hasLocation =
+      filteredData.longitude !== 0 && filteredData.latitude !== 0;
+    const hasName =
       (filteredData.longName && filteredData.longName.trim() !== "") ||
-      (filteredData.shortName && filteredData.shortName.trim() !== "") ||
-      (filteredData.longitude !== 0 && filteredData.latitude !== 0);
+      (filteredData.shortName && filteredData.shortName.trim() !== "");
+
+    // Должно быть либо геолокация, либо имя, но не оба одновременно
+    const hasValidData = (hasLocation && !hasName) || (!hasLocation && hasName);
 
     // Если нет полезных данных, возвращаем null
     if (!hasValidData) {
