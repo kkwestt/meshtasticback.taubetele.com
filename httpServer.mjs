@@ -77,6 +77,12 @@ export class HTTPServer {
     this.app.get("/dots", this.handleDotsEndpoint.bind(this));
     this.app.get("/dots/:deviceId", this.handleSingleDotEndpoint.bind(this));
 
+    // Cache status endpoint
+    this.app.get("/cache-status", this.handleCacheStatusEndpoint.bind(this));
+
+    // Test endpoint for dots
+    this.app.post("/test-dots", this.handleTestDotsEndpoint.bind(this));
+
     // Endpoint для формата portnumName:deviceId
     this.app.get(
       "/:portnumNameAndDeviceId",
@@ -430,12 +436,32 @@ export class HTTPServer {
    */
   async handleDotsEndpoint(req, res) {
     try {
+      const startTime = Date.now();
+      console.log(`🌐 [HTTP] GET /dots request received`);
+
       const dots = await this.redisManager.getAllDotData();
+
+      const responseTime = Date.now() - startTime;
+      console.log(
+        `🌐 [HTTP] GET /dots response sent in ${responseTime}ms, count: ${
+          Object.keys(dots).length
+        }`
+      );
+
+      // Добавляем заголовки кэширования
+      res.set({
+        "Cache-Control": "public, max-age=300", // 5 минут
+        "X-Cache-Status": responseTime < 100 ? "HIT" : "MISS",
+        "X-Response-Time": `${responseTime}ms`,
+      });
 
       res.json({
         timestamp: Date.now(),
         count: Object.keys(dots).length,
         data: dots,
+        response_time_ms: responseTime,
+        cached: responseTime < 100, // Если ответ получен быстро, вероятно из кэша
+        cache_ttl_seconds: 300,
       });
     } catch (error) {
       handleEndpointError(error, res, "Dots endpoint");
@@ -475,6 +501,74 @@ export class HTTPServer {
         res,
         `Single dot endpoint (${req.params.deviceId})`
       );
+    }
+  }
+
+  /**
+   * Обрабатывает /cache-status endpoint - возвращает статус кэша
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleCacheStatusEndpoint(req, res) {
+    try {
+      const cacheStats = this.redisManager.getCacheStats();
+
+      res.json({
+        timestamp: Date.now(),
+        cache: cacheStats,
+        cache_ttl_ms: this.redisManager.cacheTTL,
+        cache_ttl_seconds: Math.floor(this.redisManager.cacheTTL / 1000),
+      });
+    } catch (error) {
+      handleEndpointError(error, res, "Cache status endpoint");
+    }
+  }
+
+  /**
+   * Тестовый эндпоинт для проверки работы dots
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleTestDotsEndpoint(req, res) {
+    try {
+      const { deviceId, testData } = req.body;
+
+      if (!deviceId) {
+        return res.status(400).json({ error: "deviceId is required" });
+      }
+
+      // Тестируем создание/обновление dots данных
+      await this.redisManager.updateDotData(
+        deviceId,
+        testData || {
+          longName: "Test Long Name",
+          shortName: "Test",
+          longitude: 37.6173,
+          latitude: 55.7558,
+          altitude: 100,
+          test_field: "test_value",
+        }
+      );
+
+      // Проверяем, что данные сохранились
+      const savedData = await this.redisManager.getDotData(deviceId);
+
+      res.json({
+        timestamp: Date.now(),
+        message: "Test data created/updated",
+        deviceId,
+        savedData,
+        testData: testData || {
+          longName: "Test Long Name",
+          shortName: "Test",
+          longitude: 37.6173,
+          latitude: 55.7558,
+          altitude: 100,
+          test_field: "test_value",
+        },
+      });
+    } catch (error) {
+      handleEndpointError(error, res, "Test dots endpoint");
     }
   }
 

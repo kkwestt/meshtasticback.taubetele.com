@@ -723,9 +723,6 @@ class MeshtasticRedisClient {
         await this.redisManager.updateDotData(event.from, {
           latitude,
           longitude,
-          altitude: altitude || undefined,
-          sats_in_view: satsInView,
-          position_time: posTime || undefined,
         });
       }
     } catch (error) {
@@ -1177,12 +1174,8 @@ class MeshtasticRedisClient {
    */
   async updateDotActivityTime(from, event, server) {
     try {
-      const updateData = {
-        server: server.name,
-        gateway: event.gatewayId,
-      };
-
-      await this.redisManager.updateDotData(from, updateData);
+      // Обновляем только время активности, без лишних полей
+      await this.redisManager.updateDotData(from, {});
     } catch (error) {
       console.error("Error updating dot activity time:", error.message);
     }

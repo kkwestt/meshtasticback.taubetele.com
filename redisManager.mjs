@@ -12,6 +12,13 @@ const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
 
 /**
  * Оптимизированный Redis Manager с batch операциями и кэшированием
+ *
+ * Структура данных для ключа dots:${deviceId}:
+ * - longName - Длинное имя устройства
+ * - shortName - Короткое имя устройства
+ * - longitude - Долгота
+ * - latitude - Широта
+ * - s_time - Серверное время обновления записи
  */
 export class RedisManager {
   constructor(config) {
@@ -741,22 +748,27 @@ export class RedisManager {
       const key = `dots:${deviceId}`;
       const currentTime = Date.now();
 
-      // Получаем текущие данные
-      const existingData = await this.redis.hgetall(key);
+      // Фильтруем только нужные поля
+      const filteredData = {};
+      const allowedFields = ["longName", "shortName", "longitude", "latitude"];
 
-      // Генерируем hex_id из deviceId
-      const hexId = `!${parseInt(deviceId).toString(16).padStart(8, "0")}`;
+      Object.entries(updateData).forEach(([key, value]) => {
+        if (
+          allowedFields.includes(key) &&
+          value !== undefined &&
+          value !== null
+        ) {
+          filteredData[key] = value;
+        }
+      });
 
-      // Создаем объект с новыми данными
       const dotData = {
-        // Сохраняем существующие данные
-        ...existingData,
-        // Обновляем время последнего обновления
-        last_updated: currentTime,
-        device_id: deviceId,
-        hex_id: hexId,
-        // Добавляем новые данные
-        ...updateData,
+        // Только базовые поля согласно требованиям
+        longName: filteredData.longName || "",
+        shortName: filteredData.shortName || "",
+        longitude: filteredData.longitude || 0,
+        latitude: filteredData.latitude || 0,
+        s_time: currentTime,
       };
 
       // Преобразуем числовые значения в строки для Redis
@@ -771,12 +783,85 @@ export class RedisManager {
 
       await this.redis.hset(key, redisData);
 
+      // Проверяем, что данные сохранились
+      const savedData = await this.redis.hgetall(key);
+
+      // Инвалидируем кэш
+      this.invalidateDotCache(deviceId);
+    } catch (error) {
+      console.error(`Error updating dot data for ${deviceId}:`, error.message);
+    }
+  }
+
+  /**
+   * Создает стандартную структуру данных точки
+   * @param {Object} parsedData - Распарсенные данные из Redis
+   * @param {string} deviceId - ID устройства
+   * @returns {Object} - Стандартизированные данные
+   */
+  _createStandardDotData(parsedData, deviceId) {
+    return {
+      longName: parsedData.longName || parsedData["Long Name"] || "",
+      shortName: parsedData.shortName || parsedData["Short Name"] || "",
+      longitude: parsedData.longitude || 0,
+      latitude: parsedData.latitude || 0,
+      s_time: parsedData.s_time || 0,
+    };
+  }
+
+  /**
+   * Создает новую точку с базовой структурой
+   * @param {string} deviceId - ID устройства (numeric)
+   * @param {Object} initialData - Начальные данные
+   * @returns {Object} - Созданные данные точки
+   */
+  async createDotData(deviceId, initialData = {}) {
+    try {
+      const key = `dots:${deviceId}`;
+      const currentTime = Date.now();
+
+      // Фильтруем только базовые поля
+      const filteredData = {};
+      const allowedFields = ["longName", "shortName", "longitude", "latitude"];
+
+      Object.entries(initialData).forEach(([key, value]) => {
+        if (
+          allowedFields.includes(key) &&
+          value !== undefined &&
+          value !== null
+        ) {
+          filteredData[key] = value;
+        }
+      });
+
+      // Создаем базовую структуру
+      const baseData = {
+        longName: filteredData.longName || "",
+        shortName: filteredData.shortName || "",
+        longitude: filteredData.longitude || 0,
+        latitude: filteredData.latitude || 0,
+        s_time: currentTime,
+      };
+
+      // Преобразуем в формат для Redis
+      const redisData = {};
+      Object.entries(baseData).forEach(([key, value]) => {
+        if (typeof value === "object" && value !== null) {
+          redisData[key] = JSON.stringify(value);
+        } else {
+          redisData[key] = String(value);
+        }
+      });
+
+      await this.redis.hset(key, redisData);
+
       // Инвалидируем кэш
       this.invalidateDotCache(deviceId);
 
-      // console.log(`🗺️ Обновлены данные карты для устройства ${deviceId}`);
+      return baseData;
     } catch (error) {
-      console.error(`Error updating dot data for ${deviceId}:`, error.message);
+      console.error(`Error creating dot data for ${deviceId}:`, error.message);
+      throw error;
     }
   }
 
@@ -800,7 +885,7 @@ export class RedisManager {
         return null;
       }
 
-      // Парсим JSON поля обратно
+      // Парсим JSON поля обратно и приводим к новой структуре
       const parsedData = {};
       Object.entries(data).forEach(([key, value]) => {
         try {
@@ -816,11 +901,14 @@ export class RedisManager {
         }
       });
 
+      // Приводим к стандартной структуре
+      const standardData = this._createStandardDotData(parsedData, deviceId);
+
       // Кэшируем результат
-      this.cache.set(cacheKey, parsedData);
+      this.cache.set(cacheKey, standardData);
       this.cacheTimestamps.set(cacheKey, Date.now());
 
-      return parsedData;
+      return standardData;
     } catch (error) {
       console.error(`Error getting dot data for ${deviceId}:`, error.message);
       return null;
@@ -835,8 +923,15 @@ export class RedisManager {
     const cacheKey = "all_dots";
 
     if (this.isCacheValid(cacheKey)) {
+      console.log(
+        `🗺️ [CACHE HIT] Dots data served from cache for key: ${cacheKey}`
+      );
       return this.cache.get(cacheKey);
     }
+
+    console.log(
+      `🗺️ [CACHE MISS] Fetching dots data from Redis for key: ${cacheKey}`
+    );
 
     try {
       const pattern = "dots:*";
@@ -852,12 +947,19 @@ export class RedisManager {
         args: [key],
       }));
 
+      console.log(`🗺️ [READ] Found ${keys.length} dots keys:`, keys);
+
       const results = await executeRedisPipeline(this.redis, operations);
 
       const allDots = {};
       keys.forEach((key, index) => {
         const deviceId = key.split(":")[1]; // Извлекаем ID из ключа dots:1234567
         const data = results[index];
+
+        console.log(
+          `🗺️ [READ] Processing key ${key}, deviceId: ${deviceId}, data:`,
+          data
+        );
 
         if (data && Object.keys(data).length > 0) {
           // Парсим данные как в getDotData
@@ -874,13 +976,25 @@ export class RedisManager {
             }
           });
 
-          allDots[deviceId] = parsedData;
+          // Приводим к стандартной структуре
+          const standardData = this._createStandardDotData(
+            parsedData,
+            deviceId
+          );
+
+          allDots[deviceId] = standardData;
         }
       });
 
       // Кэшируем результат
       this.cache.set(cacheKey, allDots);
       this.cacheTimestamps.set(cacheKey, Date.now());
+
+      console.log(
+        `🗺️ [CACHE STORE] Dots data cached for key: ${cacheKey}, count: ${
+          Object.keys(allDots).length
+        }`
+      );
 
       return allDots;
     } catch (error) {
