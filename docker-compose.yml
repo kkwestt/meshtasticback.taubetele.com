@@ -15,3 +15,4 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./config.mjs:/app/config.mjs:ro
+    network_mode: bridge
