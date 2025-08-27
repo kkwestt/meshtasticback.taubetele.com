@@ -771,6 +771,14 @@ export class RedisManager {
         updateData.longName !== undefined ||
         updateData.shortName !== undefined
       ) {
+        console.log(
+          `🔍 [DEBUG] updateDotData - node info update for device ${deviceId}:`,
+          {
+            longName: updateData.longName,
+            shortName: updateData.shortName,
+          }
+        );
+
         // Обновляем только те поля, которые действительно пришли
         if (updateData.longName !== undefined) {
           fieldsToUpdate.longName = updateData.longName;

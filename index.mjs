@@ -636,6 +636,11 @@ class MeshtasticRedisClient {
     decodedUserData
   ) {
     try {
+      console.log(
+        `🔍 [DEBUG] NODEINFO_APP data for device ${event.from}:`,
+        decodedUserData
+      );
+
       const id = decodedUserData.id;
       const longName = decodedUserData.long_name || decodedUserData.longName;
       const shortName = decodedUserData.short_name || decodedUserData.shortName;
@@ -643,6 +648,10 @@ class MeshtasticRedisClient {
       const publicKey = decodedUserData.public_key || decodedUserData.publicKey;
       const hwModel = decodedUserData.hw_model || decodedUserData.hwModel;
       const role = decodedUserData.role;
+
+      console.log(
+        `🔍 [DEBUG] Extracted names - longName: "${longName}", shortName: "${shortName}"`
+      );
 
       const userRecord = {
         from: event.from,
@@ -663,8 +672,8 @@ class MeshtasticRedisClient {
 
       // Обновляем информацию об устройстве в dots ключе
       await this.redisManager.updateDotData(event.from, {
-        short_name: shortName,
-        long_name: longName,
+        shortName: shortName,
+        longName: longName,
         hw_model: hwModel,
         role,
       });
