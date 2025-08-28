@@ -58,13 +58,6 @@ export class HTTPServer {
     this.app.get("/health", this.handleHealthCheck.bind(this));
     this.app.get("/stats", this.handleStatsEndpoint.bind(this));
 
-    // Endpoints для получения данных по portnum
-    nen;
-    this.app.get(
-      "/portnum/:portnumName/:deviceId",
-      this.handlePortnumDeviceEndpoint.bind(this)
-    );
-
     // Dots endpoint - данные для карты
     this.app.get("/dots", this.handleDotsEndpoint.bind(this));
     this.app.get("/dots/:deviceId", this.handleSingleDotEndpoint.bind(this));
@@ -203,70 +196,6 @@ export class HTTPServer {
       });
     } catch (error) {
       handleEndpointError(error, res, "Stats endpoint");
-    }
-  }
-
-  /**
-   * Обрабатывает получение сообщений по portnum для конкретного устройства
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handlePortnumDeviceEndpoint(req, res) {
-    try {
-      const { portnumName, deviceId } = req.params;
-      const limit = parseInt(req.query.limit) || 200;
-
-      // Валидация portnum
-      const validPortnums = [
-        "TEXT_MESSAGE_APP",
-        "POSITION_APP",
-        "NODEINFO_APP",
-        "TELEMETRY_APP",
-        "NEIGHBORINFO_APP",
-        "WAYPOINT_APP",
-        "MAP_REPORT_APP",
-        "TRACEROUTE_APP",
-      ];
-      if (!validPortnums.includes(portnumName)) {
-        return res.status(400).json({
-          error: "Invalid portnum name",
-          validPortnums: validPortnums,
-        });
-      }
-
-      // Валидация device ID
-      if (!deviceId || deviceId.length === 0) {
-        return res.status(400).json({ error: "Invalid device ID" });
-      }
-
-      // Валидация лимита
-      if (limit < 1 || limit > 1000) {
-        return res.status(400).json({
-          error: "Invalid limit",
-          message: "Limit must be between 1 and 1000",
-        });
-      }
-
-      const data = await this.redisManager.getPortnumMessages(
-        portnumName,
-        deviceId,
-        limit
-      );
-
-      res.json({
-        portnum: portnumName,
-        deviceId: deviceId,
-        count: data.length,
-        limit: limit,
-        timestamp: Date.now(),
-        data: data,
-      });
-    } catch (error) {
-      handleEndpointError(
-        error,
-        res,
-        `Portnum device endpoint (${req.params.portnumName}:${req.params.deviceId})`
-      );
     }
   }
 
