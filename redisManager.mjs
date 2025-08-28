@@ -111,9 +111,7 @@ export class RedisManager {
     try {
       const portnumName = getPortnumName(portnum);
       if (!portnumName) {
-        console.log(
-          `⚠️ Неизвестный portnum: ${portnum}, пропускаем сохранение в новую схему`
-        );
+        console.log(`⚠️ Неизвестный portnum: ${portnum}`);
         return;
       }
 

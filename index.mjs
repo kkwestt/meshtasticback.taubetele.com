@@ -729,18 +729,7 @@ async function main() {
 
   // Обработка сигналов для корректного завершения
   const gracefulShutdown = async (signal) => {
-    console.log(`\n👋 Получен сигнал ${signal}, завершение работы...`);
-
-    // Выводим статистику
-    const stats = client.getStats();
-    console.log(`📊 Статистика работы:`);
-    console.log(`  📨 Обработано сообщений: ${stats.messages.processed}`);
-    console.log(`  ❌ Ошибок: ${stats.messages.errors}`);
-    console.log(`  ⏱️ Время работы: ${Math.round(stats.uptime / 1000)}с`);
-    console.log(
-      `  🌐 MQTT подключений: ${stats.mqtt.connected}/${stats.mqtt.total}`
-    );
-
+    // console.log(`\n👋 Получен сигнал ${signal}, завершение работы...`);
     await client.disconnect();
     process.exit(0);
   };
