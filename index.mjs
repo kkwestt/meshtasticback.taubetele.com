@@ -457,6 +457,9 @@ class MeshtasticRedisClient {
             };
 
             // Обновляем данные для карты на основе типа сообщения
+            console.log(
+              `🔍 Отладка MQTT: deviceId=${event.from}, gatewayId=${event.gatewayId}, rawDataId=${decodedPayload.data.id}`
+            );
             await this.updateDotDataFromPortnum(
               event.data.portnum,
               event.from,

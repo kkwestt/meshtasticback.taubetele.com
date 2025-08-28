@@ -19,7 +19,7 @@ const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
  * - longitude - Долгота (если есть геолокация)
  * - latitude - Широта (если есть геолокация)
  * - s_time - Серверное время обновления записи
- * - mqtt - Флаг MQTT (1 - MQTT, 0 - не подключен HTTP)
+ * - mqtt - Флаг MQTT (1 - MQTT gateway)
  *
  * Правило: должно быть либо геолокация, либо имя. Пакеты приходят раздельно.
  * Устройства без имени и геолокации не сохраняются в dots:.
@@ -483,9 +483,24 @@ export class RedisManager {
         }
       }
 
-      // Проверяем условие MQTT: если gatewayId === rawData.id, устанавливаем mqtt: "1"
-      if (options && options.gatewayId === options.rawDataId) {
-        fieldsToUpdate.mqtt = "1";
+      // Проверяем условие MQTT: если gatewayId === rawDataId, устанавливаем mqtt: "1"
+      // Это означает, что устройство отправляет сообщение через свой собственный gateway
+      if (options && options.gatewayId && options.rawDataId) {
+        // Проверяем, является ли это MQTT устройством
+        // MQTT устройства имеют gatewayId равный своему собственному ID
+        const isMqttDevice = options.gatewayId === options.rawDataId;
+
+        if (isMqttDevice) {
+          console.log(
+            `🔍 MQTT устройство обнаружено: ${deviceId} (gatewayId=${options.gatewayId}, rawDataId=${options.rawDataId})`
+          );
+          fieldsToUpdate.mqtt = "1";
+        } else {
+          console.log(
+            `🔍 Обычное устройство: ${deviceId} (gatewayId=${options.gatewayId}, rawDataId=${options.rawDataId})`
+          );
+          // Не устанавливаем флаг mqtt для обычных устройств
+        }
       }
 
       // Всегда обновляем время
