@@ -19,6 +19,7 @@ const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
  * - longitude - Долгота (если есть геолокация)
  * - latitude - Широта (если есть геолокация)
  * - s_time - Серверное время обновления записи
+ * - mqtt - Флаг MQTT (1 - MQTT, 0 - не подключен HTTP)
  *
  * Правило: должно быть либо геолокация, либо имя. Пакеты приходят раздельно.
  * Устройства без имени и геолокации не сохраняются в dots:.
@@ -59,8 +60,6 @@ export class RedisManager {
     return await this.redis.ping();
   }
 
-
-
   /**
    * Сохраняет сообщение по portnum
    * @param {number|string} portnum - Номер или название порта
@@ -92,8 +91,8 @@ export class RedisManager {
 
       // console.log(
       //   `💾 Сохранено в ${key}: ${JSON.stringify(messageData).substring(
-      //     0,
-      //     200
+      //    0,
+      //    200
       //   )}...`
       // );
     } catch (error) {
@@ -371,7 +370,6 @@ export class RedisManager {
 
         // Данные для карты
         `dots:${numericId}`,
-
       ];
 
       // Собираем все существующие ключи для удаления
@@ -449,8 +447,9 @@ export class RedisManager {
    * Обновляет данные точки для карты
    * @param {string} deviceId - ID устройства (numeric)
    * @param {Object} updateData - Данные для обновления
+   * @param {Object} options - Дополнительные опции (mqttCheck)
    */
-  async updateDotData(deviceId, updateData) {
+  async updateDotData(deviceId, updateData, options = {}) {
     try {
       const key = `dots:${deviceId}`;
       const currentTime = Date.now();
@@ -482,6 +481,11 @@ export class RedisManager {
         if (updateData.shortName !== undefined) {
           fieldsToUpdate.shortName = updateData.shortName;
         }
+      }
+
+      // Проверяем условие MQTT: если gatewayId === rawData.id, устанавливаем mqtt: "1"
+      if (options && options.gatewayId === options.rawDataId) {
+        fieldsToUpdate.mqtt = "1";
       }
 
       // Всегда обновляем время
@@ -540,6 +544,7 @@ export class RedisManager {
       longitude: parsedData.longitude || 0,
       latitude: parsedData.latitude || 0,
       s_time: parsedData.s_time || 0,
+      mqtt: parsedData.mqtt || "",
     };
 
     const result = this._filterDotData(normalizedData, parsedData.s_time || 0);
@@ -562,7 +567,13 @@ export class RedisManager {
     const currentTime = timestamp || Date.now();
 
     // Определяем разрешенные поля
-    const allowedFields = ["longName", "shortName", "longitude", "latitude"];
+    const allowedFields = [
+      "longName",
+      "shortName",
+      "longitude",
+      "latitude",
+      "mqtt",
+    ];
 
     // Фильтруем только базовые поля и нормализуем значения
     const filteredData = {};
@@ -615,6 +626,7 @@ export class RedisManager {
       shortName: filteredData.shortName || "",
       longitude: filteredData.longitude || 0,
       latitude: filteredData.latitude || 0,
+      mqtt: filteredData.mqtt || "",
       s_time: currentTime,
     };
 

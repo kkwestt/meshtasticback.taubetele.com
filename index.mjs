@@ -460,7 +460,11 @@ class MeshtasticRedisClient {
             await this.updateDotDataFromPortnum(
               event.data.portnum,
               event.from,
-              decodedPayload.data
+              decodedPayload.data,
+              {
+                gatewayId: event.gatewayId,
+                rawDataId: decodedPayload.data.id,
+              }
             );
           } catch (error) {
             // Если декодирование не удалось, сохраняем как есть
@@ -498,7 +502,12 @@ class MeshtasticRedisClient {
   /**
    * Обновляет данные точки на основе типа portnum сообщения
    */
-  async updateDotDataFromPortnum(portnum, deviceId, decodedData) {
+  async updateDotDataFromPortnum(
+    portnum,
+    deviceId,
+    decodedData,
+    additionalInfo = null
+  ) {
     try {
       // Обрабатываем разные типы сообщений для обновления dots данных
       if (portnum === 4 || portnum === "NODEINFO_APP") {
@@ -508,10 +517,14 @@ class MeshtasticRedisClient {
         const id = decodedData.id;
 
         if (longName || shortName) {
-          await this.redisManager.updateDotData(deviceId, {
-            longName: longName || "",
-            shortName: shortName || "",
-          });
+          await this.redisManager.updateDotData(
+            deviceId,
+            {
+              longName: longName || "",
+              shortName: shortName || "",
+            },
+            additionalInfo
+          );
         }
       } else if (portnum === 3 || portnum === "POSITION_APP") {
         // Данные позиции
@@ -522,10 +535,14 @@ class MeshtasticRedisClient {
           const latitude = latitudeI / 1e7;
           const longitude = longitudeI / 1e7;
 
-          await this.redisManager.updateDotData(deviceId, {
-            latitude,
-            longitude,
-          });
+          await this.redisManager.updateDotData(
+            deviceId,
+            {
+              latitude,
+              longitude,
+            },
+            additionalInfo
+          );
         }
       }
     } catch (error) {
