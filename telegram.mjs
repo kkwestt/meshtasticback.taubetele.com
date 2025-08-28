@@ -711,13 +711,15 @@ const formatDeviceStats = async (stats, redis) => {
         batteryLevel !== null &&
         typeof batteryLevel === "number"
       )
-        message += `🔋 <b>Батарея:</b> ${batteryLevel}%\n`;
+        message += `🔋 <b>Батарея:</b> ${
+          batteryLevel > 100 ? 100 : batteryLevel
+        }%\n`;
       if (
         voltage !== undefined &&
         voltage !== null &&
         typeof voltage === "number"
       )
-        message += `⚡ <b>Напряжение:</b> ${voltage}V\n`;
+        message += `⚡ <b>Напряжение:</b> ${voltage.toFixed(1)}V\n`;
       if (
         channelUtilization !== undefined &&
         channelUtilization !== null &&
@@ -951,10 +953,11 @@ const formatDeviceStats = async (stats, redis) => {
       // Добавляем от кого и кому
       const fromDevice = traceroute?.from || tracerouteHistory[0]?.from;
       const toDevice = traceroute?.to || tracerouteHistory[0]?.to;
+      let fromHex, toHex;
 
       if (fromDevice && toDevice) {
-        const fromHex = `!${fromDevice.toString(16).padStart(8, "0")}`;
-        const toHex = `!${toDevice.toString(16).padStart(8, "0")}`;
+        fromHex = `!${fromDevice.toString(16).padStart(8, "0")}`;
+        toHex = `!${toDevice.toString(16).padStart(8, "0")}`;
         message += `📤 <b>От:</b> ${escapeHtml(
           fromHex
         )} → <b>К:</b> ${escapeHtml(toHex)}\n`;
@@ -1007,9 +1010,10 @@ const formatDeviceStats = async (stats, redis) => {
 
       // Показываем информацию об ошибке, если есть
       if (error) {
-        message += `⚠️ <b>Ошибка:</b> ${escapeHtml(error)}\n`;
-        if (payloadSize !== undefined) {
-          message += `📦 <b>Размер payload:</b> ${payloadSize} байт\n`;
+        if (error === "Empty payload") {
+          message += `⚠️ <b>Ошибка:</b> Нет обратного пинга\n`;
+        } else {
+          message += `⚠️ <b>Ошибка:</b> ${escapeHtml(error)}\n`;
         }
       }
 
@@ -1042,22 +1046,41 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🗺️ <b>Туда:</b> `;
         const routeParts = [];
 
-        // Добавляем источник
-        routeParts.push(escapeHtml(fromHex));
+        // Добавляем источник с иконкой и ссылкой
+        const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+        routeParts.push(
+          ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
+            fromHex
+          )}</a>`
+        );
 
-        // Добавляем промежуточные узлы с SNR
+        // Добавляем промежуточные узлы с SNR, иконками и ссылками
         route.forEach((nodeId, index) => {
           const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+          const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
           const snr = snrTowards[index];
           if (snr !== undefined) {
-            routeParts.push(`${escapeHtml(nodeHex)}(${snr}dB)`);
+            routeParts.push(
+              ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
+                nodeHex
+              )}(${snr}dB)</a>`
+            );
           } else {
-            routeParts.push(escapeHtml(nodeHex));
+            routeParts.push(
+              ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
+                nodeHex
+              )}</a>`
+            );
           }
         });
 
-        // Добавляем назначение
-        routeParts.push(escapeHtml(toHex));
+        // Добавляем назначение с иконкой и ссылкой
+        const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+        routeParts.push(
+          ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
+            toHex
+          )}</a>`
+        );
 
         message += routeParts.join(" → ") + "\n";
         hasTraceData = true;
@@ -1066,17 +1089,32 @@ const formatDeviceStats = async (stats, redis) => {
         message += `🗺️ <b>Туда:</b> `;
         const routeParts = [];
 
-        // Добавляем источник
-        routeParts.push(escapeHtml(fromHex));
+        // Добавляем источник с иконкой и ссылкой
+        const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+        routeParts.push(
+          ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
+            fromHex
+          )}</a>`
+        );
 
-        // Добавляем промежуточные узлы
+        // Добавляем промежуточные узлы с иконками и ссылками
         route.forEach((nodeId) => {
           const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
-          routeParts.push(escapeHtml(nodeHex));
+          const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
+          routeParts.push(
+            ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
+              nodeHex
+            )}</a>`
+          );
         });
 
-        // Добавляем назначение
-        routeParts.push(escapeHtml(toHex));
+        // Добавляем назначение с иконкой и ссылкой
+        const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+        routeParts.push(
+          ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
+            toHex
+          )}</a>`
+        );
 
         message += routeParts.join(" → ") + "\n";
         hasTraceData = true;
@@ -1089,39 +1127,73 @@ const formatDeviceStats = async (stats, redis) => {
           // Есть SNR - показываем маршрут с SNR
           const routeParts = [];
 
-          // Добавляем назначение (бывший источник)
-          routeParts.push(escapeHtml(toHex));
+          // Добавляем назначение (бывший источник) с иконкой и ссылкой
+          const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+          routeParts.push(
+            ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
+              toHex
+            )}</a>`
+          );
 
-          // Добавляем промежуточные узлы с SNR
+          // Добавляем промежуточные узлы с SNR, иконками и ссылками
           routeBack.forEach((nodeId, index) => {
             const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+            const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
             const snr = snrBack[index];
             if (snr !== undefined) {
-              routeParts.push(`${escapeHtml(nodeHex)}(${snr}dB)`);
+              routeParts.push(
+                ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
+                  nodeHex
+                )}(${snr}dB)</a>`
+              );
             } else {
-              routeParts.push(escapeHtml(nodeHex));
+              routeParts.push(
+                ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
+                  nodeHex
+                )}</a>`
+              );
             }
           });
 
-          // Добавляем источник (бывшее назначение)
-          routeParts.push(escapeHtml(fromHex));
+          // Добавляем источник (бывшее назначение) с иконкой и ссылкой
+          const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+          routeParts.push(
+            ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
+              fromHex
+            )}</a>`
+          );
 
           message += routeParts.join(" → ") + "\n";
         } else {
           // Нет SNR - показываем только маршрут
           const routeParts = [];
 
-          // Добавляем назначение (бывший источник)
-          routeParts.push(escapeHtml(toHex));
+          // Добавляем назначение (бывший источник) с иконкой и ссылкой
+          const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+          routeParts.push(
+            ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
+              toHex
+            )}</a>`
+          );
 
-          // Добавляем промежуточные узлы
+          // Добавляем промежуточные узлы с иконками и ссылками
           routeBack.forEach((nodeId) => {
             const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
-            routeParts.push(escapeHtml(nodeHex));
+            const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
+            routeParts.push(
+              ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
+                nodeHex
+              )}</a>`
+            );
           });
 
-          // Добавляем источник (бывшее назначение)
-          routeParts.push(escapeHtml(fromHex));
+          // Добавляем источник (бывшее назначение) с иконкой и ссылкой
+          const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+          routeParts.push(
+            ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
+              fromHex
+            )}</a>`
+          );
 
           message += routeParts.join(" → ") + "\n";
         }
@@ -1143,29 +1215,29 @@ const formatDeviceStats = async (stats, redis) => {
         const traceGatewayId = traceroute?.gatewayId;
         const traceTimestamp = traceroute?.serverTime || traceroute?.timestamp;
 
-        if (
-          traceRxRssi &&
-          traceRxSnr &&
-          traceRxRssi !== "N/A" &&
-          traceRxSnr !== "N/A" &&
-          traceGatewayId
-        ) {
-          const gatewayInfo = gatewayInfoMap[traceGatewayId];
-          if (gatewayInfo) {
-            message += `🛰️ <b>Traceroute RX:</b> ${escapeHtml(
-              gatewayInfo.longName
-            )} (${escapeHtml(gatewayInfo.idHex)}) `;
-            const formattedTraceHop = formatHopCount(traceHop);
-            if (formattedTraceHop) {
-              message += `${formattedTraceHop} `;
-            }
-            message += `RSSI/SNR: ${traceRxRssi}/${traceRxSnr}`;
-            if (traceTimestamp) {
-              message += ` ${formatTimeAgo(traceTimestamp)}`;
-            }
-            message += `\n`;
-          }
-        }
+        // if (
+        //   traceRxRssi &&
+        //   traceRxSnr &&
+        //   traceRxRssi !== "N/A" &&
+        //   traceRxSnr !== "N/A" &&
+        //   traceGatewayId
+        // ) {
+        //   const gatewayInfo = gatewayInfoMap[traceGatewayId];
+        //   if (gatewayInfo) {
+        //     message += `🛰️ <b>Traceroute RX:</b> ${escapeHtml(
+        //       gatewayInfo.longName
+        //     )} (${escapeHtml(gatewayInfo.idHex)}) `;
+        //     const formattedTraceHop = formatHopCount(traceHop);
+        //     if (formattedTraceHop) {
+        //       message += `${formattedTraceHop} `;
+        //     }
+        //     message += `RSSI/SNR: ${traceRxRssi}/${traceRxSnr}`;
+        //     if (traceTimestamp) {
+        //       message += ` ${formatTimeAgo(traceTimestamp)}`;
+        //     }
+        //     message += `\n`;
+        //   }
+        // }
       }
     }
     message += `\n`;
@@ -1454,4 +1526,4 @@ export const handleTelegramMessage = async (
 };
 
 // Экспортируем функции для тестирования
-export { getDeviceStats, getGatewayInfoBatch, toNumericId };
+export { getDeviceStats, getGatewayInfoBatch, toNumericId, formatDeviceStats };
