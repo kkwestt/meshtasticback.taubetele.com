@@ -32,7 +32,7 @@ const {
 } = CONSTANTS;
 
 /**
- * Оптимизированный Meshtastic Redis клиент
+ * Оптимизированный Meshtastic Redis клиент (только новая схема)
  */
 class MeshtasticRedisClient {
   constructor() {
@@ -426,7 +426,7 @@ class MeshtasticRedisClient {
   }
 
   /**
-   * Основная функция обработки событий
+   * Основная функция обработки событий (только новая схема)
    */
   async processEvent(server, fullTopic, user, eventName, eventType, event) {
     try {
@@ -435,13 +435,10 @@ class MeshtasticRedisClient {
         return;
       }
 
-      const key = `device:${from}`;
-      const serverTime = Date.now();
-
-      // Обновляем время последней активности для карты [[memory:3665001]]
+      // Обновляем время последней активности для карты
       await this.updateDotActivityTime(from, event, server);
 
-      // Сохраняем все расшифрованные сообщения по portnum
+      // Сохраняем все расшифрованные сообщения по portnum (НОВАЯ СХЕМА)
       if (event.data?.portnum) {
         // Декодируем payload если он есть
         let dataToSave = event.data;
@@ -459,41 +456,12 @@ class MeshtasticRedisClient {
               ...decodedPayload.data,
             };
 
-            // Сохраняем в старую схему для соответствующих типов
-            if (
-              event.data.portnum === 4 ||
-              event.data.portnum === "NODEINFO_APP"
-            ) {
-              await this.saveUserDataToOldSchema(
-                server,
-                event,
-                key,
-                serverTime,
-                decodedPayload.data
-              );
-            } else if (
-              event.data.portnum === 3 ||
-              event.data.portnum === "POSITION_APP"
-            ) {
-              await this.savePositionDataToOldSchema(
-                server,
-                event,
-                key,
-                serverTime,
-                decodedPayload.data
-              );
-            } else if (
-              event.data.portnum === 67 ||
-              event.data.portnum === "TELEMETRY_APP"
-            ) {
-              await this.saveTelemetryDataToOldSchema(
-                server,
-                event,
-                key,
-                serverTime,
-                decodedPayload.data
-              );
-            }
+            // Обновляем данные для карты на основе типа сообщения
+            await this.updateDotDataFromPortnum(
+              event.data.portnum,
+              event.from,
+              decodedPayload.data
+            );
           } catch (error) {
             // Если декодирование не удалось, сохраняем как есть
             dataToSave = {
@@ -522,38 +490,63 @@ class MeshtasticRedisClient {
           portnumData
         );
       }
-
-      // СТАРАЯ СХЕМА: Обрабатываем разные типы событий как было раньше (кроме user - он уже обработан выше)
-      switch (eventType) {
-        // case "user": // Убрано - теперь обрабатывается в новой схеме
-        //   await this.handleUserEvent(server, event, key, serverTime);
-        //   break;
-        case "position":
-          await this.handlePositionEvent(server, event, key, serverTime);
-          break;
-        case "telemetry":
-          await this.handleTelemetryEvent(server, event, key, serverTime);
-          break;
-        case "message":
-          await this.handleMessageEvent(
-            server,
-            fullTopic,
-            event,
-            key,
-            serverTime
-          );
-          break;
-        case "neighborInfo":
-          await this.handleNeighborInfoEvent(server, event, from, serverTime);
-          break;
-        case "mapReport":
-          await this.handleMapReportEvent(server, event, from, serverTime);
-          break;
-        default:
-        // Неизвестный тип события
-      }
     } catch (error) {
       console.error("❌ Ошибка обработки события:", error.message);
+    }
+  }
+
+  /**
+   * Обновляет данные точки на основе типа portnum сообщения
+   */
+  async updateDotDataFromPortnum(portnum, deviceId, decodedData) {
+    try {
+      // Обрабатываем разные типы сообщений для обновления dots данных
+      if (portnum === 4 || portnum === "NODEINFO_APP") {
+        // Данные пользователя
+        const longName = decodedData.long_name || decodedData.longName;
+        const shortName = decodedData.short_name || decodedData.shortName;
+        const id = decodedData.id;
+
+        if (longName || shortName) {
+          await this.redisManager.updateDotData(deviceId, {
+            longName: longName || "",
+            shortName: shortName || "",
+          });
+        }
+
+        // Сохраняем данные пользователя отдельно
+        if (id) {
+          const userRecord = {
+            from: deviceId,
+            shortName: shortName || "",
+            longName: longName || "",
+            macaddr: formatMacAddress(decodedData.macaddr),
+            publicKey: bufferToHex(
+              decodedData.public_key || decodedData.publicKey
+            ),
+            hwModel: decodedData.hw_model || decodedData.hwModel,
+            role: decodedData.role,
+          };
+
+          await this.redisManager.saveUserData(id, userRecord);
+        }
+      } else if (portnum === 3 || portnum === "POSITION_APP") {
+        // Данные позиции
+        const latitudeI = decodedData.latitude_i || decodedData.latitudeI;
+        const longitudeI = decodedData.longitude_i || decodedData.longitudeI;
+
+        if (latitudeI && longitudeI && latitudeI !== 0 && longitudeI !== 0) {
+          const latitude = latitudeI / 1e7;
+          const longitude = longitudeI / 1e7;
+
+          await this.redisManager.updateDotData(deviceId, {
+            latitude,
+            longitude,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error updating dot data from portnum:", error.message);
     }
   }
 
@@ -593,564 +586,6 @@ class MeshtasticRedisClient {
       }
       // Возвращаем null для подавляемых ошибок
       return null;
-    }
-  }
-
-  /**
-   * Общий метод для создания deviceData структуры
-   */
-  createDeviceData(event, data) {
-    return {
-      timestamp: Date.now(),
-      rxTime: event.packet?.rxTime * 1000 || Date.now(),
-      type: "broadcast",
-      from: event.from,
-      to: event.packet?.to || 4294967295,
-      rxSnr: event.rxSnr,
-      hopLimit: event.hopLimit,
-      rxRssi: event.rxRssi,
-      gatewayId: event.gatewayId,
-      data,
-    };
-  }
-
-  /**
-   * Общий метод для сохранения данных в Redis (старая схема)
-   */
-  async saveToRedis(key, serverTime, data, server, dataType) {
-    await this.redisManager.saveDeviceData(key, {
-      server: server.name,
-      timestamp: serverTime,
-      [dataType]: JSON.stringify(data),
-    });
-  }
-
-  /**
-   * Сохраняет декодированные данные пользователя в старую схему
-   */
-  async saveUserDataToOldSchema(
-    server,
-    event,
-    key,
-    serverTime,
-    decodedUserData
-  ) {
-    try {
-      const id = decodedUserData.id;
-      const longName = decodedUserData.long_name || decodedUserData.longName;
-      const shortName = decodedUserData.short_name || decodedUserData.shortName;
-      const macaddr = decodedUserData.macaddr;
-      const publicKey = decodedUserData.public_key || decodedUserData.publicKey;
-      const hwModel = decodedUserData.hw_model || decodedUserData.hwModel;
-      const role = decodedUserData.role;
-
-      const userRecord = {
-        from: event.from,
-        shortName,
-        longName,
-        macaddr: formatMacAddress(macaddr),
-        publicKey: bufferToHex(publicKey),
-        hwModel,
-        role,
-      };
-
-      // Сохраняем данные пользователя отдельно в user:!hexId
-      await this.redisManager.saveUserData(id, userRecord);
-
-      // Сохраняем в device ключ
-      const deviceData = this.createDeviceData(event, userRecord);
-      await this.saveToRedis(key, serverTime, deviceData, server, "user");
-
-      // Обновляем информацию об устройстве в dots ключе
-      await this.redisManager.updateDotData(event.from, {
-        shortName: shortName,
-        longName: longName,
-        hw_model: hwModel,
-        role,
-      });
-    } catch (error) {
-      console.error("❌ Error saving user data to old schema:", error.message);
-    }
-  }
-
-  /**
-   * Сохраняет декодированные данные позиции в старую схему
-   */
-  async savePositionDataToOldSchema(
-    server,
-    event,
-    key,
-    serverTime,
-    decodedPositionData
-  ) {
-    try {
-      const {
-        latitude_i: latitudeI,
-        longitude_i: longitudeI,
-        altitude,
-        sats_in_view: satsInView,
-        time: posTime,
-      } = decodedPositionData;
-
-      // Проверяем валидность координат
-      if (latitudeI && longitudeI && latitudeI !== 0 && longitudeI !== 0) {
-        // Сохраняем в gps ключ
-        const gpsKey = `gps:${event.from}`;
-        const newPosItem = {
-          latitudeI,
-          longitudeI,
-          altitude: altitude || undefined,
-          time: serverTime,
-        };
-
-        await this.redisManager.upsertItem(gpsKey, serverTime, newPosItem);
-
-        // Сохраняем в device ключ
-        const deviceData = this.createDeviceData(event, {
-          latitudeI,
-          longitudeI,
-          altitude: altitude || undefined,
-          time: posTime || undefined,
-          satsInView,
-        });
-
-        await this.saveToRedis(key, serverTime, deviceData, server, "position");
-
-        // Обновляем геолокацию в dots ключе
-        const latitude = latitudeI / 1e7;
-        const longitude = longitudeI / 1e7;
-
-        await this.redisManager.updateDotData(event.from, {
-          latitude,
-          longitude,
-        });
-      }
-    } catch (error) {
-      console.error(
-        "❌ Error saving position data to old schema:",
-        error.message
-      );
-    }
-  }
-
-  /**
-   * Сохраняет декодированные данные телеметрии в старую схему
-   */
-  async saveTelemetryDataToOldSchema(
-    server,
-    event,
-    key,
-    serverTime,
-    decodedTelemetryData
-  ) {
-    try {
-      const { type, variant } =
-        decodedTelemetryData.rawData || decodedTelemetryData;
-
-      if (type === "deviceMetrics" && variant?.value) {
-        const deviceMetrics = variant.value;
-        await this.handleDeviceMetrics(
-          server,
-          event,
-          key,
-          serverTime,
-          deviceMetrics
-        );
-      } else if (type === "environmentMetrics" && variant?.value) {
-        const environmentMetrics = variant.value;
-        await this.handleEnvironmentMetrics(
-          server,
-          event,
-          key,
-          serverTime,
-          environmentMetrics
-        );
-      }
-    } catch (error) {
-      console.error(
-        "❌ Error saving telemetry data to old schema:",
-        error.message
-      );
-    }
-  }
-
-  /**
-   * Обрабатывает события позиции (СТАРАЯ СХЕМА)
-   */
-  async handlePositionEvent(server, event, key, serverTime) {
-    try {
-      if (!event.data?.payload) return;
-
-      const positionData = this.decodePayload("Position", event.data.payload);
-      if (!positionData) return; // Пропускаем если декодирование не удалось
-
-      const {
-        latitudeI,
-        longitudeI,
-        altitude,
-        satsInView,
-        time: posTime,
-      } = positionData;
-
-      // Проверяем валидность координат
-      if (latitudeI && longitudeI && latitudeI !== 0 && longitudeI !== 0) {
-        // Сохраняем в gps ключ
-        const gpsKey = `gps:${event.from}`;
-        const newPosItem = {
-          latitudeI,
-          longitudeI,
-          altitude: altitude || undefined,
-          time: serverTime,
-        };
-
-        await this.redisManager.upsertItem(gpsKey, serverTime, newPosItem);
-
-        // Сохраняем в device ключ
-        const deviceData = this.createDeviceData(event, {
-          latitudeI,
-          longitudeI,
-          altitude: altitude || undefined,
-          time: posTime || undefined,
-          satsInView,
-        });
-
-        await this.saveToRedis(key, serverTime, deviceData, server, "position");
-      }
-    } catch (error) {
-      console.error("Error handling position event:", error.message);
-    }
-  }
-
-  /**
-   * Обрабатывает телеметрические события (СТАРАЯ СХЕМА)
-   */
-  async handleTelemetryEvent(server, event, key, serverTime) {
-    try {
-      if (!event.data?.payload) return;
-
-      const telemetryData = this.decodePayload("Telemetry", event.data.payload);
-      if (!telemetryData) return; // Пропускаем если декодирование не удалось
-
-      // Определяем тип телеметрии
-      let deviceMetrics = null;
-      let environmentMetrics = null;
-
-      if (telemetryData.variant?.case === "deviceMetrics") {
-        deviceMetrics = telemetryData.variant.value;
-      } else if (telemetryData.variant?.case === "environmentMetrics") {
-        environmentMetrics = telemetryData.variant.value;
-      } else if (telemetryData.deviceMetrics) {
-        deviceMetrics = telemetryData.deviceMetrics;
-      } else if (telemetryData.environmentMetrics) {
-        environmentMetrics = telemetryData.environmentMetrics;
-      }
-
-      if (deviceMetrics) {
-        await this.handleDeviceMetrics(
-          server,
-          event,
-          key,
-          serverTime,
-          deviceMetrics
-        );
-      } else if (environmentMetrics) {
-        await this.handleEnvironmentMetrics(
-          server,
-          event,
-          key,
-          serverTime,
-          environmentMetrics
-        );
-      }
-    } catch (error) {
-      console.error("Error handling telemetry event:", error.message);
-    }
-  }
-
-  /**
-   * Обрабатывает метрики устройства (СТАРАЯ СХЕМА)
-   */
-  async handleDeviceMetrics(server, event, key, serverTime, deviceMetrics) {
-    let {
-      batteryLevel,
-      voltage,
-      channelUtilization,
-      airUtilTx,
-      uptimeSeconds,
-    } = deviceMetrics;
-
-    // Округляем значения
-    batteryLevel = batteryLevel > 100 ? 100 : round(batteryLevel, 0);
-    voltage = round(voltage, 3);
-    channelUtilization = round(channelUtilization, 1);
-    airUtilTx = round(airUtilTx, 3);
-
-    const newMetricsItem = {
-      batteryLevel,
-      voltage,
-      channelUtilization,
-      airUtilTx,
-      uptimeSeconds,
-    };
-
-    if (isValidDeviceMetrics(newMetricsItem)) {
-      // Сохраняем в deviceMetrics ключ
-      const telemetryKey = `deviceMetrics:${event.from}`;
-      await this.redisManager.upsertItem(
-        telemetryKey,
-        serverTime,
-        newMetricsItem
-      );
-
-      // Сохраняем в device ключ
-      const deviceData = this.createDeviceData(event, {
-        variant: {
-          case: "deviceMetrics",
-          value: newMetricsItem,
-        },
-      });
-
-      await this.saveToRedis(
-        key,
-        serverTime,
-        deviceData,
-        server,
-        "deviceMetrics"
-      );
-
-      // Обновляем основные метрики в dots ключе
-      await this.redisManager.updateDotData(event.from, {
-        battery_level: batteryLevel,
-        voltage,
-        channel_utilization: channelUtilization,
-        air_util_tx: airUtilTx,
-        uptime_seconds: uptimeSeconds,
-      });
-    }
-  }
-
-  /**
-   * Обрабатывает метрики окружения (СТАРАЯ СХЕМА)
-   */
-  async handleEnvironmentMetrics(
-    server,
-    event,
-    key,
-    serverTime,
-    environmentMetrics
-  ) {
-    let {
-      temperature,
-      relativeHumidity,
-      barometricPressure,
-      gasResistance,
-      voltage,
-      current,
-    } = environmentMetrics;
-
-    // Округляем значения
-    temperature = round(temperature, 1);
-    relativeHumidity = round(relativeHumidity, 0);
-    barometricPressure = round(barometricPressure, 0);
-    gasResistance = round(gasResistance, 0);
-    voltage = round(voltage, 2);
-    current = round(current, 2);
-
-    const newEnvItem = {
-      temperature,
-      relativeHumidity,
-      barometricPressure,
-      gasResistance,
-      voltage,
-      current,
-    };
-
-    if (isValidEnvironmentMetrics(newEnvItem)) {
-      // Сохраняем в environmentMetrics ключ
-      const telemetryKey = `environmentMetrics:${event.from}`;
-      await this.redisManager.upsertItem(telemetryKey, serverTime, newEnvItem);
-
-      // Сохраняем в device ключ
-      const deviceData = this.createDeviceData(event, {
-        variant: {
-          case: "environmentMetrics",
-          value: newEnvItem,
-        },
-      });
-
-      await this.saveToRedis(
-        key,
-        serverTime,
-        deviceData,
-        server,
-        "environmentMetrics"
-      );
-    }
-  }
-
-  /**
-   * Обрабатывает сообщения (СТАРАЯ СХЕМА)
-   */
-  async handleMessageEvent(server, fullTopic, event, key, serverTime) {
-    const messageType = getMessageType(event);
-
-    let messageText = "";
-    try {
-      if (event.data?.payload) {
-        const payloadBuffer = Buffer.from(event.data.payload, "base64");
-        messageText = payloadBuffer.toString("utf8");
-      }
-    } catch (error) {
-      console.error("Error decoding message:", error.message);
-      return;
-    }
-
-    if (messageText && messageText.trim() !== "") {
-      // Сохраняем в message ключ
-      const messageKey = `message:${event.from}`;
-      const messageItem = {
-        rxTime: event.packet?.rxTime * 1000 || Date.now(),
-        type: messageType,
-        rxSnr: event.rxSnr,
-        hopLimit: event.hopLimit,
-        rxRssi: event.rxRssi,
-        gatewayId: event.gatewayId,
-        data: messageText,
-      };
-
-      await this.redisManager.upsertItem(messageKey, serverTime, messageItem);
-
-      // Сохраняем в device ключ только broadcast сообщения
-      if (messageType === "broadcast") {
-        const deviceData = this.createDeviceData(event, messageText);
-        await this.saveToRedis(key, serverTime, deviceData, server, "message");
-      }
-
-      console.log(
-        `💬 Сообщение сохранено: "${messageText.substring(0, 50)}${
-          messageText.length > 50 ? "..." : ""
-        }"`
-      );
-
-      // Отправляем в Telegram
-      const telegramEvent = {
-        ...event,
-        type: messageType,
-        data: messageText,
-      };
-      handleTelegramMessage(
-        this.redisManager.redis,
-        server,
-        fullTopic,
-        telegramEvent
-      );
-    }
-  }
-
-  /**
-   * Обрабатывает информацию о соседях (СТАРАЯ СХЕМА)
-   */
-  async handleNeighborInfoEvent(server, event, from, serverTime) {
-    try {
-      if (!event.data?.payload) return;
-
-      const neighborInfoData = this.decodePayload(
-        "NeighborInfo",
-        event.data.payload
-      );
-      if (!neighborInfoData) return; // Пропускаем если декодирование не удалось
-
-      const { nodeId, lastSentById, nodeBroadcastIntervalSecs, neighbors } =
-        neighborInfoData;
-
-      const processedNeighbors = neighbors
-        ? neighbors.map((neighbor) => ({
-            nodeId: neighbor.nodeId,
-            snr: neighbor.snr ? round(neighbor.snr, 2) : undefined,
-            lastRxTime: neighbor.lastRxTime,
-            nodeIdStr: neighbor.nodeId
-              ? `!${neighbor.nodeId.toString(16).padStart(8, "0")}`
-              : undefined,
-          }))
-        : [];
-
-      const newNeighborInfoItem = {
-        nodeId,
-        nodeIdStr: nodeId
-          ? `!${nodeId.toString(16).padStart(8, "0")}`
-          : undefined,
-        lastSentById,
-        lastSentByIdStr: lastSentById
-          ? `!${lastSentById.toString(16).padStart(8, "0")}`
-          : undefined,
-        nodeBroadcastIntervalSecs,
-        neighborsCount: processedNeighbors.length,
-        neighbors: processedNeighbors,
-      };
-
-      // Сохраняем в neighborInfo ключ
-      const neighborInfoKey = `neighborInfo:${from}`;
-      await this.redisManager.upsertItem(
-        neighborInfoKey,
-        serverTime,
-        newNeighborInfoItem
-      );
-    } catch (error) {
-      console.error("Error handling neighbor info event:", error.message);
-    }
-  }
-
-  /**
-   * Обрабатывает отчеты карты (СТАРАЯ СХЕМА)
-   */
-  async handleMapReportEvent(server, event, from, serverTime) {
-    try {
-      // Данные уже декодированы в protobufDecoder.mjs
-      const mapReportData = event.data?.decoded;
-
-      if (mapReportData) {
-        const {
-          longName,
-          shortName,
-          role,
-          hwModel,
-          firmwareVersion,
-          region,
-          modemPreset,
-          hasDefaultChannel,
-          latitudeI,
-          longitudeI,
-          altitude,
-          positionPrecision,
-          numOnlineLocalNodes,
-        } = mapReportData;
-
-        const newMapReportItem = {
-          longName,
-          shortName,
-          role,
-          hwModel,
-          firmwareVersion,
-          region,
-          modemPreset,
-          hasDefaultChannel,
-          latitude: latitudeI ? round(latitudeI / 1e7, 6) : undefined,
-          longitude: longitudeI ? round(longitudeI / 1e7, 6) : undefined,
-          altitude: altitude ? round(altitude, 0) : undefined,
-          positionPrecision,
-          numOnlineLocalNodes,
-        };
-
-        // Сохраняем в mapReport ключ
-        const mapReportKey = `mapReport:${from}`;
-        await this.redisManager.upsertItem(
-          mapReportKey,
-          serverTime,
-          newMapReportItem
-        );
-      }
-    } catch (error) {
-      console.error("Error handling map report event:", error.message);
     }
   }
 
@@ -1274,7 +709,9 @@ class MeshtasticRedisClient {
       if (this.redisManager) {
         await this.redisManager.disconnect();
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error("Ошибка при отключении:", error);
+    }
   }
 }
 
@@ -1313,16 +750,6 @@ async function main() {
 
   // Запускаем клиент
   await client.init();
-
-  // Периодический вывод статистики
-  setInterval(() => {
-    const stats = client.getStats();
-    console.log(
-      `📊 Статистика: ${
-        stats.messages.processed
-      } сообщений, ${stats.messages.rate.toFixed(2)} сообщений/с`
-    );
-  }, 300000); // Каждые 5 минут
 }
 
 // Запускаем только если файл запущен напрямую

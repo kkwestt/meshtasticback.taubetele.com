@@ -11,7 +11,7 @@ const { MAX_METADATA_ITEMS_COUNT, DEVICE_EXPIRY_TIME, MAX_PORTNUM_MESSAGES } =
   CONSTANTS;
 
 /**
- * Оптимизированный Redis Manager с batch операциями и кэшированием
+ * Оптимизированный Redis Manager с новой схемой хранения данных
  *
  * Структура данных для ключа dots:${deviceId}:
  * - longName - Длинное имя устройства (если есть имя)
@@ -60,220 +60,19 @@ export class RedisManager {
   }
 
   /**
-   * Получает все данные устройств с оптимизированным кэшированием
-   * @param {boolean} includeExpired - Включать ли истекшие устройства
-   * @returns {Object} - Данные устройств
+   * Сохраняет данные пользователя
+   * @param {string} userId - ID пользователя
+   * @param {Object} userData - Данные пользователя
    */
-  async getAllDeviceData(includeExpired = false) {
-    const cacheKey = `devices_${includeExpired ? "with_expired" : "active"}`;
-
-    // Проверяем кэш
-    if (this.isCacheValid(cacheKey)) {
-      return this.cache.get(cacheKey);
-    }
-
-    // Предотвращаем дублирование запросов
-    if (this.queryLock.has(cacheKey)) {
-      return await this.queryLock.get(cacheKey);
-    }
-
-    const queryPromise = this.performDeviceQuery(includeExpired);
-    this.queryLock.set(cacheKey, queryPromise);
-
+  async saveUserData(userId, userData) {
     try {
-      const result = await queryPromise;
+      await this.redis.hset(`user:${userId}`, userData);
 
-      // Кэшируем результат
-      this.cache.set(cacheKey, result);
-      this.cacheTimestamps.set(cacheKey, Date.now());
-
-      return result;
-    } finally {
-      this.queryLock.delete(cacheKey);
-    }
-  }
-
-  /**
-   * Выполняет запрос данных устройств
-   * @param {boolean} includeExpired - Включать ли истекшие устройства
-   * @returns {Object} - Данные устройств
-   */
-  async performDeviceQuery(includeExpired) {
-    try {
-      // Получаем все ключи устройств
-      const keys = await this.redis.keys("device:*");
-
-      if (keys.length === 0) {
-        return {};
-      }
-
-      // Используем pipeline для batch операций
-      const operations = createDeviceDataBatch(keys);
-      const values = await executeRedisPipeline(this.redis, operations);
-
-      // Обрабатываем результаты
-      const result = {};
-      keys.forEach((key, index) => {
-        const deviceData = values[index];
-        if (!deviceData) return;
-
-        const { server, timestamp, ...rest } = deviceData;
-
-        // Фильтруем по сроку действия если нужно
-        if (!includeExpired) {
-          const isExpired =
-            Date.now() - new Date(timestamp).getTime() >= DEVICE_EXPIRY_TIME;
-          if (isExpired) return;
-        }
-
-        const data = { server, timestamp };
-        Object.entries(rest).forEach(([key, value]) => {
-          try {
-            data[key] = JSON.parse(value);
-          } catch {
-            data[key] = value;
-          }
-        });
-
-        const from = key.substring(7); // Remove "device:" prefix
-        result[from] = data;
-      });
-
-      return result;
+      // Инвалидируем кэш пользователя
+      this.invalidateUserCache(userId);
     } catch (error) {
-      console.error("Error querying device data:", error.message);
-      return {};
+      console.error("Error saving user data:", error.message);
     }
-  }
-
-  /**
-   * Получает метаданные для устройства
-   * @param {string} deviceId - ID устройства
-   * @param {string} type - Тип метаданных
-   * @returns {Array} - Массив метаданных
-   */
-  async getDeviceMetadata(deviceId, type) {
-    const cacheKey = `metadata_${type}_${deviceId}`;
-
-    // Проверяем кэш
-    if (this.isCacheValid(cacheKey)) {
-      return this.cache.get(cacheKey);
-    }
-
-    try {
-      const data = await this.redis.lrange(
-        `${type}:${deviceId}`,
-        0,
-        MAX_METADATA_ITEMS_COUNT
-      );
-
-      const result = data
-        .map((item) => {
-          try {
-            return JSON.parse(item);
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
-
-      // Кэшируем результат
-      this.cache.set(cacheKey, result);
-      this.cacheTimestamps.set(cacheKey, Date.now());
-
-      return result;
-    } catch (error) {
-      console.error(
-        `Error querying metadata for ${type}:${deviceId}:`,
-        error.message
-      );
-      return [];
-    }
-  }
-
-  /**
-   * Сохраняет данные устройства (СТАРАЯ СХЕМА)
-   * @param {string} key - Ключ Redis
-   * @param {Object} data - Данные для сохранения
-   */
-  async saveDeviceData(key, data) {
-    try {
-      // СТАРАЯ СХЕМА ХРАНЕНИЯ ДАННЫХ
-      await this.redis.hset(key, data);
-
-      // Инвалидируем кэш
-      this.invalidateDeviceCache();
-    } catch (error) {
-      console.error("Error saving device data:", error.message);
-    }
-  }
-
-  /**
-   * Сохраняет элемент с ограничением размера списка (СТАРАЯ СХЕМА)
-   * @param {string} key - Ключ Redis
-   * @param {number} serverTime - Время сервера
-   * @param {Object} newItem - Новый элемент
-   */
-  async upsertItem(key, serverTime, newItem) {
-    try {
-      // СТАРАЯ СХЕМА ХРАНЕНИЯ ДАННЫХ
-      // Получаем последний элемент для сравнения
-      const lastItems = await this.redis.lrange(key, -1, -1);
-      const [lastItemStr] = lastItems;
-
-      const isNewItem = !lastItemStr;
-      let isUpdated = false;
-
-      if (!isNewItem) {
-        try {
-          const { time, ...lastItem } = JSON.parse(lastItemStr);
-          isUpdated = this.hasItemChanged(newItem, lastItem);
-        } catch (error) {
-          console.error("Error parsing last item:", error.message);
-          isUpdated = true;
-        }
-      }
-
-      if (isNewItem || isUpdated) {
-        const pipeline = this.redis.pipeline();
-
-        // Добавляем новый элемент
-        pipeline.rpush(key, JSON.stringify({ time: serverTime, ...newItem }));
-
-        // Обрезаем список если нужно (только для не-device ключей)
-        if (!key.startsWith("device:")) {
-          pipeline.ltrim(key, -MAX_METADATA_ITEMS_COUNT, -1);
-        }
-
-        await pipeline.exec();
-
-        // Инвалидируем кэш метаданных
-        this.invalidateMetadataCache(key);
-      }
-    } catch (error) {
-      console.error("Error upserting item:", error.message);
-    }
-  }
-
-  /**
-   * Проверяет, изменился ли элемент
-   * @param {Object} newItem - Новый элемент
-   * @param {Object} lastItem - Последний элемент
-   * @returns {boolean} - Изменился ли элемент
-   */
-  hasItemChanged(newItem, lastItem) {
-    const changedFields = Object.keys(newItem).filter((key) => {
-      const newValue = newItem[key];
-      const lastValue = lastItem[key];
-
-      if (typeof newValue === "number" && typeof lastValue === "number") {
-        return newValue.toFixed(5) !== lastValue.toFixed(5);
-      }
-
-      return JSON.stringify(newValue) !== JSON.stringify(lastValue);
-    });
-
-    return changedFields.length > 0;
   }
 
   /**
@@ -299,22 +98,6 @@ export class RedisManager {
     } catch (error) {
       console.error(`Error getting user data for ${userId}:`, error.message);
       return {};
-    }
-  }
-
-  /**
-   * Сохраняет данные пользователя
-   * @param {string} userId - ID пользователя
-   * @param {Object} userData - Данные пользователя
-   */
-  async saveUserData(userId, userData) {
-    try {
-      await this.redis.hset(`user:${userId}`, userData);
-
-      // Инвалидируем кэш пользователя
-      this.invalidateUserCache(userId);
-    } catch (error) {
-      console.error("Error saving user data:", error.message);
     }
   }
 
@@ -521,32 +304,6 @@ export class RedisManager {
   }
 
   /**
-   * Инвалидирует кэш устройств
-   */
-  invalidateDeviceCache() {
-    const keysToDelete = Array.from(this.cache.keys()).filter((key) =>
-      key.startsWith("devices_")
-    );
-
-    keysToDelete.forEach((key) => {
-      this.cache.delete(key);
-      this.cacheTimestamps.delete(key);
-    });
-  }
-
-  /**
-   * Инвалидирует кэш метаданных
-   * @param {string} metadataKey - Ключ метаданных
-   */
-  invalidateMetadataCache(metadataKey) {
-    const [type, deviceId] = metadataKey.split(":");
-    const cacheKey = `metadata_${type}_${deviceId}`;
-
-    this.cache.delete(cacheKey);
-    this.cacheTimestamps.delete(cacheKey);
-  }
-
-  /**
    * Инвалидирует кэш пользователя
    * @param {string} userId - ID пользователя
    */
@@ -568,7 +325,7 @@ export class RedisManager {
   }
 
   /**
-   * Очищает весь кэш (включая новые ключи portnum)
+   * Очищает весь кэш
    */
   clearCache() {
     this.cache.clear();
@@ -642,7 +399,7 @@ export class RedisManager {
         `🗑️ Удаление всех данных для устройства: ${hexId} (${numericId})`
       );
 
-      // Список всех возможных типов ключей
+      // Список всех возможных типов ключей (только новая схема)
       const keyPatterns = [
         // Новая схема (по portnum)
         `TEXT_MESSAGE_APP:${numericId}`,
@@ -657,17 +414,8 @@ export class RedisManager {
         // Данные для карты
         `dots:${numericId}`,
 
-        // Старая схема (по типам данных)
-        `device:${numericId}`,
+        // Данные пользователя
         `user:${hexId}`,
-        `gps:${numericId}`,
-        `deviceMetrics:${numericId}`,
-        `environmentMetrics:${numericId}`,
-        `message:${numericId}`,
-        `neighborInfo:${numericId}`,
-        `waypoint:${numericId}`,
-        `mapReport:${numericId}`,
-        `traceroute:${numericId}`,
       ];
 
       // Собираем все существующие ключи для удаления
@@ -771,14 +519,6 @@ export class RedisManager {
         updateData.longName !== undefined ||
         updateData.shortName !== undefined
       ) {
-        console.log(
-          `🔍 [DEBUG] updateDotData - node info update for device ${deviceId}:`,
-          {
-            longName: updateData.longName,
-            shortName: updateData.shortName,
-          }
-        );
-
         // Обновляем только те поля, которые действительно пришли
         if (updateData.longName !== undefined) {
           fieldsToUpdate.longName = updateData.longName;
@@ -823,9 +563,6 @@ export class RedisManager {
 
       await this.redis.hset(key, redisData);
 
-      // Проверяем, что данные сохранились
-      const savedData = await this.redis.hgetall(key);
-
       // Инвалидируем кэш
       this.invalidateDotCache(deviceId);
     } catch (error) {
@@ -864,10 +601,6 @@ export class RedisManager {
    * @param {Object} data - Входные данные
    * @param {number} timestamp - Временная метка (если не указана, используется текущее время)
    * @returns {Object|null} - Отфильтрованные и стандартизированные данные или null если данные невалидны
-   *
-   * Логика валидации: должно быть либо геолокация (longitude, latitude), либо имя (longName, shortName).
-   * Пакеты приходят раздельно - либо с координатами, либо с именами. Если нет ни того, ни другого,
-   * возвращается null.
    */
   _filterDotData(data, timestamp = null) {
     const currentTime = timestamp || Date.now();
@@ -897,23 +630,23 @@ export class RedisManager {
     });
 
     // Проверяем наличие геолокации или имени
-    // Строгая проверка координат - должны быть числами и не равны 0
     const hasLocation =
       typeof filteredData.longitude === "number" &&
       typeof filteredData.latitude === "number" &&
       filteredData.longitude !== 0 &&
       filteredData.latitude !== 0;
+
+    // ИСПРАВЛЕНО: правильная проверка имен
     const hasName =
-      (filteredData.longName && filteredData.longName.trim() !== "") ||
-      (filteredData.shortName && filteredData.shortName.trim() !== "");
+      (filteredData.longName &&
+        typeof filteredData.longName === "string" &&
+        filteredData.longName.trim() !== "") ||
+      (filteredData.shortName &&
+        typeof filteredData.shortName === "string" &&
+        filteredData.shortName.trim() !== "");
 
     // Устройство валидно, если есть либо геолокация, либо имя
-    // НО: если координаты (0,0), то обязательно должно быть имя
-    const hasValidData =
-      hasLocation ||
-      (hasName &&
-        (filteredData.longitude === 0 || filteredData.longitude === "0") &&
-        (filteredData.latitude === 0 || filteredData.latitude === "0"));
+    const hasValidData = hasLocation || hasName;
 
     // Если нет полезных данных, возвращаем null
     if (!hasValidData) {

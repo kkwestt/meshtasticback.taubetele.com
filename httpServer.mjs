@@ -5,7 +5,7 @@ import { handleEndpointError } from "./utils.mjs";
 import { adminConfig } from "./config.mjs";
 
 /**
- * Оптимизированный HTTP сервер с улучшенными endpoints
+ * Оптимизированный HTTP сервер (только новая схема)
  */
 export class HTTPServer {
   constructor(redisManager, serverConfig) {
@@ -54,8 +54,7 @@ export class HTTPServer {
     this.app.get("/admin", this.handleAdminPage.bind(this));
     this.app.post("/api/delete", this.handleDeleteDevice.bind(this));
 
-    // Основные endpoints (должны быть ПЕРЕД общим обработчиком)
-    this.app.get("/api", this.handleApiEndpoint.bind(this));
+    // Основные endpoints
     this.app.get("/health", this.handleHealthCheck.bind(this));
     this.app.get("/stats", this.handleStatsEndpoint.bind(this));
 
@@ -89,85 +88,90 @@ export class HTTPServer {
       this.handlePortnumColonFormatEndpoint.bind(this)
     );
 
-    // Главный endpoint
+    // Главный endpoint - заглушка с информацией о сервере
     this.app.get("/", this.handleRootEndpoint.bind(this));
-
-    // СТАРАЯ СХЕМА: Создаем общий обработчик для метаданных (должен быть ПОСЛЕ специфичных)
-    this.app.get("/:type:from", this.createMetadataHandler());
 
     // Обработка 404
     this.app.use(this.handle404.bind(this));
   }
 
   /**
-   * Создает обработчик для метаданных
-   * @returns {Function} - Обработчик метаданных
-   */
-  createMetadataHandler() {
-    return async (req, res) => {
-      try {
-        const { type, from } = req.params;
-        const deviceId = from.substring(1);
-
-        // Валидация типа метаданных
-        const validTypes = [
-          "gps",
-          "deviceMetrics",
-          "environmentMetrics",
-          "message",
-          "neighborInfo",
-          "mapReport",
-        ];
-        if (!validTypes.includes(type)) {
-          return res.status(400).json({ error: "Invalid metadata type" });
-        }
-
-        // Валидация device ID
-        if (!deviceId || deviceId.length === 0) {
-          return res.status(400).json({ error: "Invalid device ID" });
-        }
-
-        const data = await this.redisManager.getDeviceMetadata(deviceId, type);
-
-        res.json({
-          from: deviceId,
-          type,
-          count: data.length,
-          data,
-        });
-      } catch (error) {
-        handleEndpointError(error, res, `${req.params.type} metadata endpoint`);
-      }
-    };
-  }
-
-  /**
-   * Обрабатывает /api endpoint
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handleApiEndpoint(req, res) {
-    try {
-      const includeExpired = req.query.includeExpired === "true";
-      const data = await this.redisManager.getAllDeviceData(includeExpired);
-
-      res.json(data);
-    } catch (error) {
-      handleEndpointError(error, res, "API endpoint");
-    }
-  }
-
-  /**
-   * Обрабатывает главный endpoint
+   * Обрабатывает главный endpoint - заглушка с информацией
    * @param {Request} req - Express request
    * @param {Response} res - Express response
    */
   async handleRootEndpoint(req, res) {
     try {
-      // Главный endpoint возвращает все данные (включая истекшие)
-      const data = await this.redisManager.getAllDeviceData(true);
+      const stats = this.redisManager.getCacheStats();
+      const portnumStats = await this.redisManager.getPortnumStats();
 
-      res.json(data);
+      const totalDevices = Object.values(portnumStats).reduce(
+        (sum, stat) => sum + stat.deviceCount,
+        0
+      );
+      const totalMessages = Object.values(portnumStats).reduce(
+        (sum, stat) => sum + stat.totalMessages,
+        0
+      );
+
+      res.json({
+        name: "Meshtastic MQTT Server",
+        version: "2.0.0",
+        description: "Meshtastic MQTT data collection and API server",
+        timestamp: Date.now(),
+        uptime_seconds: Math.floor(process.uptime()),
+        status: "running",
+
+        statistics: {
+          total_devices: totalDevices,
+          total_messages: totalMessages,
+          cache_entries: stats.totalEntries,
+          memory_usage_mb: Math.round(
+            process.memoryUsage().heapUsed / 1024 / 1024
+          ),
+        },
+
+        endpoints: {
+          data: {
+            "/dots": "Map data for all devices",
+            "/dots/:deviceId": "Map data for specific device",
+            "/nodes": "List of all devices",
+            "/portnum/:portnumName": "All messages by portnum type",
+            "/portnum/:portnumName/:deviceId":
+              "Device messages by portnum type",
+            "/:portnumName::deviceId": "Device messages (colon format)",
+          },
+          system: {
+            "/health": "Health check",
+            "/stats": "Server statistics",
+            "/cache-status": "Cache status",
+            "/portnum-stats": "Statistics by portnum type",
+          },
+          admin: {
+            "/admin": "Admin panel",
+            "/api/delete": "Delete device data (POST)",
+          },
+        },
+
+        portnum_types: [
+          "TEXT_MESSAGE_APP",
+          "POSITION_APP",
+          "NODEINFO_APP",
+          "TELEMETRY_APP",
+          "NEIGHBORINFO_APP",
+          "WAYPOINT_APP",
+          "MAP_REPORT_APP",
+          "TRACEROUTE_APP",
+        ],
+
+        examples: {
+          get_all_dots: "/dots",
+          get_device_dot: "/dots/123456789",
+          get_position_messages: "/portnum/POSITION_APP",
+          get_device_positions: "/portnum/POSITION_APP/123456789",
+          get_device_telemetry: "/TELEMETRY_APP:123456789",
+        },
+      });
     } catch (error) {
       handleEndpointError(error, res, "Root endpoint");
     }
@@ -430,6 +434,55 @@ export class HTTPServer {
   }
 
   /**
+   * Строит ответ для nodes endpoint
+   * @returns {Object} - Данные узлов
+   */
+  async buildNodesResponse() {
+    try {
+      // Получаем данные точек для карты
+      const dots = await this.redisManager.getAllDotData();
+
+      // Получаем статистику по portnum для подсчета активности
+      const portnumStats = await this.redisManager.getPortnumStats();
+
+      const nodes = {};
+
+      // Обрабатываем каждую точку
+      Object.entries(dots).forEach(([deviceId, dotData]) => {
+        nodes[deviceId] = {
+          id: deviceId,
+          longName: dotData.longName || "",
+          shortName: dotData.shortName || "",
+          latitude: dotData.latitude || 0,
+          longitude: dotData.longitude || 0,
+          lastSeen: dotData.s_time || 0,
+          hasLocation: !!(
+            dotData.latitude &&
+            dotData.longitude &&
+            dotData.latitude !== 0 &&
+            dotData.longitude !== 0
+          ),
+          hasName: !!(dotData.longName || dotData.shortName),
+        };
+      });
+
+      return {
+        timestamp: Date.now(),
+        count: Object.keys(nodes).length,
+        nodes: nodes,
+      };
+    } catch (error) {
+      console.error("Error building nodes response:", error.message);
+      return {
+        timestamp: Date.now(),
+        count: 0,
+        nodes: {},
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Обрабатывает /dots endpoint - возвращает все данные для карты
    * @param {Request} req - Express request
    * @param {Response} res - Express response
@@ -527,38 +580,24 @@ export class HTTPServer {
       const { deviceId, testData } = req.body;
 
       if (!deviceId) {
-        return res.status(400).json({ error: "deviceId is required" });
+        return res.status(400).json({ error: "Device ID is required" });
       }
 
-      // Тестируем создание/обновление dots данных
-      await this.redisManager.updateDotData(
-        deviceId,
-        testData || {
-          longName: "Test Long Name",
-          shortName: "Test",
-          longitude: 37.6173,
-          latitude: 55.7558,
-          altitude: 100,
-          test_field: "test_value",
-        }
-      );
+      // Создаем тестовые данные
+      const defaultTestData = {
+        longName: testData?.longName || "Test Device",
+        shortName: testData?.shortName || "TEST",
+        latitude: testData?.latitude || 55.7558,
+        longitude: testData?.longitude || 37.6176,
+      };
 
-      // Проверяем, что данные сохранились
-      const savedData = await this.redisManager.getDotData(deviceId);
+      await this.redisManager.updateDotData(deviceId, defaultTestData);
 
       res.json({
+        success: true,
+        deviceId: deviceId,
+        testData: defaultTestData,
         timestamp: Date.now(),
-        message: "Test data created/updated",
-        deviceId,
-        savedData,
-        testData: testData || {
-          longName: "Test Long Name",
-          shortName: "Test",
-          longitude: 37.6173,
-          latitude: 55.7558,
-          altitude: 100,
-          test_field: "test_value",
-        },
       });
     } catch (error) {
       handleEndpointError(error, res, "Test dots endpoint");
@@ -566,131 +605,33 @@ export class HTTPServer {
   }
 
   /**
-   * Строит ответ для /nodes endpoint
-   * @returns {Array} - Массив узлов с данными
-   */
-  async buildNodesResponse() {
-    try {
-      // Получаем все ключи user: и POSITION_APP:
-      const [userKeys, positionKeys] = await Promise.all([
-        this.redisManager.redis.keys("user:*"),
-        this.redisManager.redis.keys("POSITION_APP:*"),
-      ]);
-
-      if (userKeys.length === 0) {
-        return [];
-      }
-
-      // Получаем данные пользователей
-      const userDataPromises = userKeys.map((key) =>
-        this.redisManager.redis.hgetall(key)
-      );
-      const userDataResults = await Promise.all(userDataPromises);
-
-      // Создаем карту пользователей
-      const userMap = new Map();
-      userKeys.forEach((key, index) => {
-        const deviceId = key.split(":")[1];
-        const userData = userDataResults[index];
-        if (userData && Object.keys(userData).length > 0) {
-          userMap.set(deviceId, userData);
-        }
-      });
-
-      // Получаем последние позиции для каждого устройства
-      const positionDataPromises = positionKeys.map(
-        (key) => this.redisManager.redis.lrange(key, -1, -1) // Последняя запись
-      );
-      const positionDataResults = await Promise.all(positionDataPromises);
-
-      // Создаем карту позиций
-      const positionMap = new Map();
-      positionKeys.forEach((key, index) => {
-        const deviceId = key.split(":")[1];
-        const positionData = positionDataResults[index];
-        if (positionData && positionData.length > 0) {
-          try {
-            const parsedPosition = JSON.parse(positionData[0]);
-            positionMap.set(deviceId, parsedPosition);
-          } catch (error) {
-            console.error(
-              `Error parsing position data for ${deviceId}:`,
-              error.message
-            );
-          }
-        }
-      });
-
-      // Собираем результат
-      const nodes = [];
-      userMap.forEach((userData, deviceId) => {
-        const position = positionMap.get(deviceId);
-        const positionData = position?.rawData || {};
-
-        // Преобразуем hex ID в числовой
-        const nodeIdHex = `!${deviceId}`;
-        const nodeId = parseInt(deviceId, 16);
-
-        const node = {
-          node_id: nodeId.toString(),
-          node_id_hex: nodeIdHex,
-          long_name: userData.longName || userData.long_name || null,
-          short_name: userData.shortName || userData.short_name || null,
-          hw_model:
-            userData.hwModel || userData.hw_model
-              ? parseInt(userData.hwModel || userData.hw_model)
-              : null,
-          role: userData.role !== undefined ? parseInt(userData.role) : null,
-          timestamp: position?.timestamp || null,
-          latitudeI:
-            positionData?.latitudeI || positionData?.latitude_i || null,
-          longitudeI:
-            positionData?.longitudeI || positionData?.longitude_i || null,
-          altitude: positionData?.altitude || null,
-        };
-
-        // Добавляем только узлы с координатами
-        if (node.latitudeI !== null && node.longitudeI !== null) {
-          nodes.push(node);
-        }
-      });
-
-      return nodes;
-    } catch (error) {
-      console.error("Error building nodes response:", error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Обрабатывает админ страницу для удаления данных
+   * Обрабатывает админ панель
    * @param {Request} req - Express request
    * @param {Response} res - Express response
    */
-  handleAdminPage(req, res) {
-    const html = `
-<!DOCTYPE html>
+  async handleAdminPage(req, res) {
+    const html = `<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meshtastic - Админ панель</title>
+    <title>Meshtastic Server Admin</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
+            max-width: 800px;
+            margin: 0 auto;
             padding: 20px;
             background: #f5f5f5;
         }
         .container {
             background: white;
             padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         h1 {
-            color: #d32f2f;
+            color: #333;
             text-align: center;
             margin-bottom: 30px;
         }
@@ -699,176 +640,142 @@ export class HTTPServer {
         }
         label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
             font-weight: 600;
-            color: #333;
+            color: #555;
         }
-        input[type="text"] {
+        input[type="text"], input[type="password"] {
             width: 100%;
             padding: 12px;
             border: 2px solid #ddd;
-            border-radius: 6px;
+            border-radius: 5px;
             font-size: 16px;
             box-sizing: border-box;
         }
-        input[type="text"]:focus {
+        input[type="text"]:focus, input[type="password"]:focus {
             outline: none;
-            border-color: #4CAF50;
+            border-color: #007bff;
         }
-        .delete-btn {
-            background: #d32f2f;
+        button {
+            background: #dc3545;
             color: white;
-            padding: 12px 24px;
+            padding: 12px 30px;
             border: none;
-            border-radius: 6px;
+            border-radius: 5px;
             font-size: 16px;
             cursor: pointer;
             width: 100%;
-            margin-top: 10px;
         }
-        .delete-btn:hover {
-            background: #b71c1c;
-        }
-        .delete-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        .warning {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
+        button:hover {
+            background: #c82333;
         }
         .result {
             margin-top: 20px;
             padding: 15px;
-            border-radius: 6px;
+            border-radius: 5px;
             display: none;
         }
         .result.success {
             background: #d4edda;
-            border: 1px solid #c3e6cb;
             color: #155724;
+            border: 1px solid #c3e6cb;
         }
         .result.error {
             background: #f8d7da;
-            border: 1px solid #f5c6cb;
             color: #721c24;
+            border: 1px solid #f5c6cb;
         }
-        .examples {
-            background: #f8f9fa;
+        .info {
+            background: #e7f3ff;
             padding: 15px;
-            border-radius: 6px;
+            border-radius: 5px;
             margin-bottom: 20px;
+            border-left: 4px solid #007bff;
         }
-        .examples h3 {
-            margin-top: 0;
-            color: #495057;
-        }
-        .examples code {
-            background: #e9ecef;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Monaco', 'Menlo', monospace;
+        .warning {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+            color: #856404;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>⚠️ Удаление данных устройства</h1>
+        <h1>🔧 Meshtastic Server Admin</h1>
+        
+        <div class="info">
+            <strong>Информация:</strong> Эта панель позволяет удалить все данные конкретного устройства из базы данных.
+        </div>
         
         <div class="warning">
-            <strong>ВНИМАНИЕ!</strong> Это действие необратимо. Будут удалены ВСЕ данные устройства из Redis включая GPS, телеметрию, сообщения и пользовательские данные.
-        </div>
-
-        <div class="examples">
-            <h3>Примеры допустимых форматов:</h3>
-            <p>• Hex формат: <code>!015ba416</code></p>
-            <p>• Numeric формат: <code>22782998</code></p>
+            <strong>⚠️ Внимание:</strong> Удаление данных необратимо! Будут удалены все сообщения, позиции, телеметрия и другие данные устройства.
         </div>
 
         <form id="deleteForm">
             <div class="form-group">
-                <label for="password">Пароль админа:</label>
-                <input type="password" id="password" name="password" placeholder="Введите пароль" required>
+                <label for="deviceId">Device ID:</label>
+                <input type="text" id="deviceId" name="deviceId" 
+                       placeholder="!015ba416 или 22782998" required>
+                <small style="color: #666;">Формат: hex (!015ba416) или numeric (22782998)</small>
             </div>
             
             <div class="form-group">
-                <label for="deviceId">Device ID:</label>
-                <input type="text" id="deviceId" name="deviceId" placeholder="!015ba416 или 22782998" required>
+                <label for="password">Пароль администратора:</label>
+                <input type="password" id="password" name="password" required>
             </div>
             
-            <button type="submit" class="delete-btn" id="deleteBtn">
-                🗑️ Удалить все данные устройства
-            </button>
+            <button type="submit">🗑️ Удалить данные устройства</button>
         </form>
-
+        
         <div id="result" class="result"></div>
     </div>
 
     <script>
-        document.getElementById('deleteForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const password = document.getElementById('password').value.trim();
-            const deviceId = document.getElementById('deviceId').value.trim();
-            const btn = document.getElementById('deleteBtn');
-            const result = document.getElementById('result');
-            
-            if (!password) {
-                showResult('error', 'Введите пароль');
-                return;
-            }
-            
-            if (!deviceId) {
-                showResult('error', 'Введите Device ID');
-                return;
-            }
-            
-            if (!confirm(\`Вы уверены, что хотите удалить ВСЕ данные устройства "\${deviceId}"?\\n\\nЭто действие необратимо!\`)) {
-                return;
-            }
-            
-            btn.disabled = true;
-            btn.textContent = '⏳ Удаление...';
-            
-            try {
-                const response = await fetch('/api/delete', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ password, deviceId })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showResult('success', \`Успешно удалено \${data.deletedKeys} ключей для устройства \${deviceId}\`);
-                    document.getElementById('password').value = '';
-                    document.getElementById('deviceId').value = '';
-                } else {
-                    showResult('error', data.error || 'Ошибка при удалении');
-                }
-            } catch (error) {
-                showResult('error', 'Ошибка сети: ' + error.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '🗑️ Удалить все данные устройства';
-            }
-        });
+    document.getElementById('deleteForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
         
-        function showResult(type, message) {
-            const result = document.getElementById('result');
-            result.className = \`result \${type}\`;
-            result.textContent = message;
-            result.style.display = 'block';
-            setTimeout(() => {
-                result.style.display = 'none';
-            }, 5000);
+        const deviceId = document.getElementById('deviceId').value.trim();
+        const password = document.getElementById('password').value;
+        
+        if (!deviceId || !password) {
+            showResult('error', 'Заполните все поля');
+            return;
         }
+        
+        try {
+            const response = await fetch('/api/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ deviceId, password })
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                showResult('success', \`Успешно удалено \${result.deletedKeys} ключей для устройства \${result.deviceId}\`);
+                document.getElementById('deleteForm').reset();
+            } else {
+                showResult('error', result.error || 'Произошла ошибка');
+            }
+        } catch (error) {
+            showResult('error', 'Ошибка сети: ' + error.message);
+        }
+    });
+    
+    function showResult(type, message) {
+        const result = document.getElementById('result');
+        result.className = \`result \${type}\`;
+        result.textContent = message;
+        result.style.display = 'block';
+        setTimeout(() => {
+            result.style.display = 'none';
+        }, 5000);
+    }
     </script>
 </body>
 </html>`;
@@ -950,6 +857,11 @@ export class HTTPServer {
       error: "Not Found",
       message: `Endpoint ${req.method} ${req.path} not found`,
       timestamp: Date.now(),
+      available_endpoints: {
+        data: ["/dots", "/nodes", "/portnum/:type", "/portnum/:type/:deviceId"],
+        system: ["/health", "/stats", "/cache-status"],
+        admin: ["/admin"],
+      },
     });
   }
 
@@ -962,40 +874,35 @@ export class HTTPServer {
     this.server = this.app.listen(PORT, () => {
       console.log(`🌐 HTTP Server running on port ${PORT}`);
       console.log(`📡 Available endpoints:`);
-      console.log(`  СТАРАЯ СХЕМА:`);
-      console.log(`    GET /                    - All device data`);
-      console.log(`    GET /api                 - Active device data`);
-
-      console.log(`    GET /gps:deviceId        - GPS data for device`);
-      console.log(`    GET /deviceMetrics:deviceId - Device metrics`);
-      console.log(`    GET /environmentMetrics:deviceId - Environment metrics`);
-      console.log(`    GET /message:deviceId    - Messages from device`);
-      console.log(`  По portnum:`);
-      console.log(`    GET /portnum/:portnumName - All messages by portnum`);
+      console.log(`  ДАННЫЕ:`);
+      console.log(
+        `    GET /dots                    - Map data for all devices`
+      );
+      console.log(
+        `    GET /dots/:deviceId          - Map data for specific device`
+      );
+      console.log(`    GET /nodes                   - List of all devices`);
+      console.log(`    GET /portnum/:portnumName    - All messages by portnum`);
       console.log(
         `    GET /portnum/:portnumName/:deviceId - Device messages by portnum`
       );
-      console.log(`    GET /portnum-stats       - Statistics by portnum`);
       console.log(
-        `    GET /:portnumNameAndDeviceId - Messages by portnum:deviceId`
+        `    GET /:portnumName::deviceId  - Device messages (colon format)`
       );
-      console.log(`  СЛУЖЕБНЫЕ:`);
-      console.log(`    GET /health              - Health check`);
-      console.log(`    GET /stats               - Server statistics`);
-      console.log(`    GET /nodes               - List of all nodes`);
-      console.log(`    GET /dots                - All map dots data`);
-      console.log(`    GET /dots/:deviceId      - Single device dot data`);
+      console.log(`  СИСТЕМА:`);
+      console.log(`    GET /health                  - Health check`);
+      console.log(`    GET /stats                   - Server statistics`);
+      console.log(`    GET /cache-status            - Cache status`);
+      console.log(`    GET /portnum-stats           - Statistics by portnum`);
       console.log(`  АДМИН:`);
-      console.log(
-        `    GET /admin               - Admin panel for device deletion`
-      );
-      console.log(`    POST /api/delete         - Delete all device data`);
+      console.log(`    GET /admin                   - Admin panel`);
+      console.log(`    POST /api/delete             - Delete device data`);
       console.log(`  `);
       console.log(
         `  📋 Доступные portnum: TEXT_MESSAGE_APP, POSITION_APP, NODEINFO_APP,`
       );
       console.log(
-        `      TELEMETRY_APP, NEIGHBORINFO_APP, WAYPOINT_APP, MAP_REPORT_APP, TRACEROUTE_APP`
+        `     TELEMETRY_APP, NEIGHBORINFO_APP, WAYPOINT_APP, MAP_REPORT_APP, TRACEROUTE_APP`
       );
     });
 
