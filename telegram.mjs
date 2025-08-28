@@ -948,6 +948,48 @@ const formatDeviceStats = async (stats, redis) => {
     if (traceData) {
       message += `🛤️ <b>Traceroute:</b>\n`;
 
+      // Добавляем от кого и кому
+      const fromDevice = traceroute?.from || tracerouteHistory[0]?.from;
+      const toDevice = traceroute?.to || tracerouteHistory[0]?.to;
+
+      if (fromDevice && toDevice) {
+        const fromHex = `!${fromDevice.toString(16).padStart(8, "0")}`;
+        const toHex = `!${toDevice.toString(16).padStart(8, "0")}`;
+        message += `📤 <b>От:</b> ${escapeHtml(
+          fromHex
+        )} → <b>К:</b> ${escapeHtml(toHex)}\n`;
+
+        // Ищем обратный маршрут - Traceroute от toDevice к fromDevice
+        try {
+          const reverseTraceroute = await redis.getPortnumMessages(
+            "TRACEROUTE_APP",
+            toDevice,
+            1
+          );
+          if (reverseTraceroute.length > 0) {
+            const reverseData = reverseTraceroute[0];
+            if (
+              reverseData.from === toDevice &&
+              reverseData.to === fromDevice
+            ) {
+              // Нашли обратный Traceroute
+              const reverseRawData = reverseData.rawData;
+              if (
+                reverseRawData?.route_back &&
+                Array.isArray(reverseRawData.route_back) &&
+                reverseRawData.route_back.length > 0
+              ) {
+                // Есть обратный маршрут - сохраняем для отображения
+                traceData.route_back = reverseRawData.route_back;
+                traceData.snr_back = reverseRawData.snr_back;
+              }
+            }
+          }
+        } catch (error) {
+          // Игнорируем ошибки поиска обратного маршрута
+        }
+      }
+
       // Support both camelCase and snake_case field names
       const dest = traceData.dest;
       const back = traceData.back;
@@ -997,65 +1039,97 @@ const formatDeviceStats = async (stats, redis) => {
         Array.isArray(snrTowards) &&
         snrTowards.length > 0
       ) {
-        message += `🗺️ <b>Маршрут:</b>\n`;
+        message += `🗺️ <b>Туда:</b> `;
+        const routeParts = [];
+
+        // Добавляем источник
+        routeParts.push(escapeHtml(fromHex));
+
+        // Добавляем промежуточные узлы с SNR
         route.forEach((nodeId, index) => {
           const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
           const snr = snrTowards[index];
           if (snr !== undefined) {
-            message += `  ${index + 1}. ${escapeHtml(nodeHex)} (${snr} dB)\n`;
+            routeParts.push(`${escapeHtml(nodeHex)}(${snr}dB)`);
           } else {
-            message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
+            routeParts.push(escapeHtml(nodeHex));
           }
         });
+
+        // Добавляем назначение
+        routeParts.push(escapeHtml(toHex));
+
+        message += routeParts.join(" → ") + "\n";
         hasTraceData = true;
       } else if (route && Array.isArray(route) && route.length > 0) {
         // Fallback если нет SNR данных
-        message += `🗺️ <b>Маршрут:</b>\n`;
-        route.forEach((nodeId, index) => {
+        message += `🗺️ <b>Туда:</b> `;
+        const routeParts = [];
+
+        // Добавляем источник
+        routeParts.push(escapeHtml(fromHex));
+
+        // Добавляем промежуточные узлы
+        route.forEach((nodeId) => {
           const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
-          message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
+          routeParts.push(escapeHtml(nodeHex));
         });
+
+        // Добавляем назначение
+        routeParts.push(escapeHtml(toHex));
+
+        message += routeParts.join(" → ") + "\n";
         hasTraceData = true;
       }
 
       // Отображаем обратный маршрут с SNR данными
-      if (
-        routeBack &&
-        Array.isArray(routeBack) &&
-        routeBack.length > 0 &&
-        snrBack &&
-        Array.isArray(snrBack) &&
-        snrBack.length > 0
-      ) {
-        message += `🔙 <b>Обратный маршрут:</b>\n`;
-        routeBack.forEach((nodeId, index) => {
-          const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
-          const snr = snrBack[index];
-          if (snr !== undefined) {
-            message += `  ${index + 1}. ${escapeHtml(nodeHex)} (${snr} dB)\n`;
-          } else {
-            message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
-          }
-        });
-        hasTraceData = true;
-      } else if (
-        routeBack &&
-        Array.isArray(routeBack) &&
-        routeBack.length > 0
-      ) {
-        // Fallback если нет SNR данных
-        message += `🔙 <b>Обратный маршрут:</b>\n`;
-        routeBack.forEach((nodeId, index) => {
-          const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
-          message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
-        });
-        hasTraceData = true;
-      }
+      if (routeBack && Array.isArray(routeBack) && routeBack.length > 0) {
+        message += `🔙 <b>Обратно:</b> `;
+        if (snrBack && Array.isArray(snrBack) && snrBack.length > 0) {
+          // Есть SNR - показываем маршрут с SNR
+          const routeParts = [];
 
-      // Отображаем SNR обратного маршрута
-      if (snrBack && Array.isArray(snrBack) && snrBack.length > 0) {
-        message += `📶 <b>SNR обратно:</b> ${snrBack
-          .map((snr) => `${snr} dB`)
+          // Добавляем назначение (бывший источник)
+          routeParts.push(escapeHtml(toHex));
+
+          // Добавляем промежуточные узлы с SNR
+          routeBack.forEach((nodeId, index) => {
+            const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+            const snr = snrBack[index];
+            if (snr !== undefined) {
+              routeParts.push(`${escapeHtml(nodeHex)}(${snr}dB)`);
+            } else {
+              routeParts.push(escapeHtml(nodeHex));
+            }
+          });
+
+          // Добавляем источник (бывшее назначение)
+          routeParts.push(escapeHtml(fromHex));
+
+          message += routeParts.join(" → ") + "\n";
+        } else {
+          // Нет SNR - показываем только маршрут
+          const routeParts = [];
+
+          // Добавляем назначение (бывший источник)
+          routeParts.push(escapeHtml(toHex));
+
+          // Добавляем промежуточные узлы
+          routeBack.forEach((nodeId) => {
+            const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+            routeParts.push(escapeHtml(nodeHex));
+          });
+
+          // Добавляем источник (бывшее назначение)
+          routeParts.push(escapeHtml(fromHex));
+
+          message += routeParts.join(" → ") + "\n";
+        }
+        hasTraceData = true;
+      } else if (snrBack && Array.isArray(snrBack) && snrBack.length > 0) {
+        // Fallback если нет маршрута, но есть SNR - показываем только SNR
+        message += `🔙 <b>SNR обратно:</b> ${snrBack
+          .map((snr) => `${snr}dB`)
           .join(", ")}\n`;
         hasTraceData = true;
       }
