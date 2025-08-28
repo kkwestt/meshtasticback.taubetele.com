@@ -160,6 +160,28 @@ const ROLES = {
   11: "ROUTER LATE",
 };
 
+const REGIONS = {
+  0: "UNSET",
+  1: "US",
+  2: "EU_433",
+  3: "EU_868",
+  4: "CN",
+  5: "JP",
+  6: "ANZ",
+  7: "KR",
+  8: "TW",
+  9: "RU",
+  10: "IN",
+  11: "NZ_865",
+  12: "TH",
+  13: "LORA_24",
+  14: "UA_433",
+  15: "UA_868",
+  16: "MY_433",
+  17: "MY_919",
+  18: "SG_923",
+};
+
 // Utility functions
 const escapeHtml = (text) =>
   String(text || "")
@@ -185,14 +207,22 @@ const formatTimeAgo = (timestamp) => {
     const diffMs = Date.now() - timestampDate.getTime();
     if (diffMs < 0) return ""; // Время в будущем - некорректно
 
+    const diffSeconds = Math.floor(diffMs / 1000);
     const diffMinutes = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 360000);
-    const diffDays = Math.floor(diffMs / 8640000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMinutes < 1) return "[только что]";
+    if (diffSeconds < 30) return "[только что]";
+    if (diffSeconds < 60) return `[${diffSeconds} сек назад]`;
     if (diffMinutes < 60) return `[${diffMinutes} мин назад]`;
     if (diffHours < 24) return `[${diffHours} ч назад]`;
-    return `[${diffDays} дн назад]`;
+    if (diffDays < 30) return `[${diffDays} дн назад]`;
+
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) return `[${diffMonths} мес назад]`;
+
+    const diffYears = Math.floor(diffDays / 365);
+    return `[${diffYears} г назад]`;
   } catch (error) {
     return "";
   }
@@ -216,6 +246,7 @@ const formatUptime = (hours) => {
 const getHwModelName = (hwModel) =>
   HW_MODELS[hwModel] || `Unknown (${hwModel})`;
 const getRoleName = (role) => ROLES[role] || `Unknown (${role})`;
+const getRegionName = (region) => REGIONS[region] || `Unknown (${region})`;
 
 // Safe JSON parse
 const safeJsonParse = (str) => {
@@ -267,67 +298,35 @@ const getGatewayInfoBatch = async (redis, gatewayIds) => {
 
       try {
         const numericId = toNumericId(gatewayId);
-
-        // Сначала пытаемся получить данные из NODEINFO_APP
+        // Ищем данные gateway по его числовому ID
         const userData = await redis.getPortnumMessages(
           "NODEINFO_APP",
           numericId,
           1
         );
 
-        let longName = "Unknown";
-        let shortName = "N/A";
-
         if (userData && userData[0]) {
-          // Проверяем разные варианты структуры данных
-          const rawData = userData[0].rawData || userData[0].data;
-          longName =
-            rawData?.longName ||
-            rawData?.long_name ||
-            rawData?.text ||
-            longName;
-          shortName = rawData?.shortName || rawData?.short_name || shortName;
+          const longName =
+            userData[0].rawData?.longName || userData[0].rawData?.long_name;
+          const shortName =
+            userData[0].rawData?.shortName || userData[0].rawData?.short_name;
+
+          gatewayInfoMap[gatewayId] = {
+            idHex: gatewayId,
+            numericId: numericId,
+            longName: longName || gatewayId,
+            shortName: shortName || "N/A",
+          };
         } else {
-          // Если нет данных в NODEINFO_APP, пытаемся получить из dots (карта устройств)
-          try {
-            const rawData = await redis.redis.hgetall(`dots:${numericId}`);
-            if (rawData && Object.keys(rawData).length > 0) {
-              // Парсим данные как в Redis менеджере
-              const dotData = {};
-              Object.entries(rawData).forEach(([key, value]) => {
-                try {
-                  dotData[key] = JSON.parse(value);
-                } catch {
-                  if (!isNaN(value) && value !== "") {
-                    dotData[key] = Number(value);
-                  } else {
-                    dotData[key] = value;
-                  }
-                }
-              });
+          // Если нет данных о gateway, используем hex ID как название
 
-              // Используем данные из dots если они есть
-              if (dotData.longName && dotData.longName.trim() !== "") {
-                longName = dotData.longName;
-              }
-              if (dotData.shortName && dotData.shortName.trim() !== "") {
-                shortName = dotData.shortName;
-              }
-            }
-          } catch (dotError) {
-            console.error(
-              `Error getting dot data for gateway ${gatewayId}:`,
-              dotError.message
-            );
-          }
+          gatewayInfoMap[gatewayId] = {
+            idHex: gatewayId,
+            numericId: numericId,
+            longName: gatewayId,
+            shortName: gatewayId,
+          };
         }
-
-        gatewayInfoMap[gatewayId] = {
-          idHex: gatewayId,
-          numericId: numericId,
-          longName: longName,
-          shortName: shortName,
-        };
       } catch (error) {
         console.error(
           `Error getting gateway info for ${gatewayId}:`,
@@ -337,8 +336,8 @@ const getGatewayInfoBatch = async (redis, gatewayIds) => {
         gatewayInfoMap[gatewayId] = {
           idHex: gatewayId,
           numericId: toNumericId(gatewayId),
-          longName: "Unknown",
-          shortName: "N/A",
+          longName: gatewayId,
+          shortName: gatewayId,
         };
       }
     }
@@ -361,11 +360,15 @@ const getDeviceStats = async (redis, deviceId) => {
       positionMessages,
       deviceMetricsMessages,
       environmentMetricsMessages,
+      mapReportMessages,
+      tracerouteMessages,
     ] = await Promise.all([
       redis.getPortnumMessages("NODEINFO_APP", numericId, 1),
       redis.getPortnumMessages("POSITION_APP", numericId, 1),
       redis.getPortnumMessages("TELEMETRY_APP", numericId, 1),
       redis.getPortnumMessages("TELEMETRY_APP", numericId, 1), // Environment metrics тоже в TELEMETRY_APP
+      redis.getPortnumMessages("MAP_REPORT_APP", numericId, 1),
+      redis.getPortnumMessages("TRACEROUTE_APP", numericId, 1),
     ]);
 
     // Получаем последние сообщения для истории
@@ -374,11 +377,15 @@ const getDeviceStats = async (redis, deviceId) => {
       positionHistory,
       deviceMetricsHistory,
       envMetricsHistory,
+      mapReportHistory,
+      tracerouteHistory,
     ] = await Promise.all([
       redis.getPortnumMessages("NODEINFO_APP", numericId, 10),
       redis.getPortnumMessages("POSITION_APP", numericId, 10),
       redis.getPortnumMessages("TELEMETRY_APP", numericId, 10),
       redis.getPortnumMessages("TELEMETRY_APP", numericId, 10),
+      redis.getPortnumMessages("MAP_REPORT_APP", numericId, 10),
+      redis.getPortnumMessages("TRACEROUTE_APP", numericId, 10),
     ]);
 
     // Получаем последние текстовые сообщения
@@ -418,10 +425,14 @@ const getDeviceStats = async (redis, deviceId) => {
       position: positionMessages[0] || null,
       deviceMetrics: deviceMetricsMessages[0] || null,
       environmentMetrics: environmentMetricsMessages[0] || null,
+      mapReport: mapReportMessages[0] || null,
+      traceroute: tracerouteMessages[0] || null,
       userData: dotData,
       gpsHistory: positionHistory,
       deviceMetricsHistory: deviceMetricsHistory,
       envMetricsHistory: envMetricsHistory,
+      mapReportHistory: mapReportHistory,
+      tracerouteHistory: tracerouteHistory,
       lastMessages: lastMessages,
       // Добавляем информацию о gateway если есть
       server: userMessages[0]?.server || positionMessages[0]?.server || null,
@@ -444,11 +455,15 @@ const formatDeviceStats = async (stats, redis) => {
     position,
     deviceMetrics,
     environmentMetrics,
+    mapReport,
+    traceroute,
     server,
     userData,
     gpsHistory,
     deviceMetricsHistory,
     envMetricsHistory,
+    mapReportHistory,
+    tracerouteHistory,
     lastMessages,
   } = stats;
 
@@ -488,6 +503,7 @@ const formatDeviceStats = async (stats, redis) => {
     userData?.hw_model ||
     255;
   const role = user?.data?.role || userData?.role || 0;
+  const region = user?.data?.region || userData?.region;
 
   message += `👤 <b>Имя:</b> ${escapeHtml(longName)} (${escapeHtml(
     shortName
@@ -496,6 +512,9 @@ const formatDeviceStats = async (stats, redis) => {
   message += `🆔 <b>ID:</b> ${escapeHtml(userFrom)}\n`;
   message += `🔧 <b>Модель:</b> ${escapeHtml(getHwModelName(hwModel))}\n`;
   message += `⚡ <b>Роль:</b> ${escapeHtml(getRoleName(role))}\n`;
+  if (region !== undefined) {
+    message += `🌍 <b>Регион:</b> ${escapeHtml(getRegionName(region))}\n`;
+  }
 
   // Add NodeInfo RX information
   const nodeInfoRxData = user || userData;
@@ -564,39 +583,29 @@ const formatDeviceStats = async (stats, redis) => {
   // Last messages section
   if (lastMessages?.length > 0) {
     message += `💬 <b>Последние сообщения:</b>\n`;
-    lastMessages.slice(0, 3).forEach((msg) => {
-      const gateway = gatewayInfoMap[msg.gatewayId];
-      const timeAgo = formatTimeAgo(
-        msg.serverTime || msg.timestamp || msg.rxTime
-      );
+    // Показываем только одно последнее сообщение
+    const lastMsg = lastMessages[lastMessages.length - 1];
+    const timeAgo = formatTimeAgo(
+      lastMsg.serverTime || lastMsg.timestamp || lastMsg.rxTime
+    );
 
-      // Try different ways to get message text
-      let messageText = "N/A";
-      const rawData = msg.rawData || msg.data;
+    // Try different ways to get message text
+    let messageText = "N/A";
+    if (lastMsg.rawData?.text) {
+      messageText = lastMsg.rawData.text;
+    } else if (typeof lastMsg.data === "string") {
+      messageText = lastMsg.data;
+    } else if (lastMsg.data?.text) {
+      messageText = lastMsg.data.text;
+    } else if (lastMsg.text) {
+      messageText = lastMsg.text;
+    } else if (lastMsg.payload) {
+      messageText = lastMsg.payload;
+    }
 
-      if (typeof rawData === "string") {
-        messageText = rawData;
-      } else if (rawData?.text) {
-        messageText = rawData.text;
-      } else if (rawData?.payload) {
-        // Если payload в base64, пытаемся декодировать
-        try {
-          const payloadBuffer = Buffer.from(rawData.payload, "base64");
-          messageText = payloadBuffer.toString("utf8");
-        } catch (error) {
-          messageText = rawData.payload;
-        }
-      } else if (msg.text) {
-        messageText = msg.text;
-      } else if (msg.payload) {
-        messageText = msg.payload;
-      }
-
-      message += `📝 ${escapeHtml(messageText)} ${timeAgo}\n`;
-    });
+    message += `📝 ${escapeHtml(messageText)} ${timeAgo}\n`;
 
     // Add Message RX information
-    const lastMsg = lastMessages[lastMessages.length - 1];
     if (
       lastMsg &&
       lastMsg.gatewayId &&
@@ -627,9 +636,9 @@ const formatDeviceStats = async (stats, redis) => {
   }
 
   // GPS section
-  if (position?.data || gpsHistory.length > 0) {
+  if (position?.rawData || gpsHistory.length > 0) {
     // message += `📍 <b>GPS данные:</b>\n`;
-    const gpsData = position?.data || gpsHistory[0];
+    const gpsData = position?.rawData || gpsHistory[0]?.rawData;
     if (gpsData) {
       // Support different field name formats
       const latitudeI = gpsData.latitudeI || gpsData.latitude_i;
@@ -680,8 +689,8 @@ const formatDeviceStats = async (stats, redis) => {
   }
 
   // Device metrics section
-  if (deviceMetrics?.data || deviceMetricsHistory.length > 0) {
-    const metrics = deviceMetrics?.data || deviceMetricsHistory[0];
+  if (deviceMetrics?.rawData || deviceMetricsHistory.length > 0) {
+    const metrics = deviceMetrics?.rawData || deviceMetricsHistory[0]?.rawData;
 
     if (metrics) {
       // Handle nested structure: variant.value or direct metrics
@@ -765,9 +774,9 @@ const formatDeviceStats = async (stats, redis) => {
     message += `\n`;
   }
 
-  // Environment metrics section
-  if (environmentMetrics?.data || envMetricsHistory.length > 0) {
-    const env = environmentMetrics?.data || envMetricsHistory[0];
+  // Environment metrics section - только если есть данные о температуре/влажности
+  if (environmentMetrics?.rawData || envMetricsHistory.length > 0) {
+    const env = environmentMetrics?.rawData || envMetricsHistory[0]?.rawData;
     if (env) {
       // Handle nested structure: variant.value or direct metrics
       const actualEnv = env.variant?.value || env;
@@ -782,45 +791,307 @@ const formatDeviceStats = async (stats, redis) => {
       const voltage = actualEnv.voltage;
       const current = actualEnv.current;
 
-      if (temperature !== undefined && temperature !== null)
+      // Показываем Environment RX только если есть реальные данные о температуре/влажности
+      let hasEnvData = false;
+      if (temperature !== undefined && temperature !== null) {
         message += `🌡️ <b>Температура:</b> ${temperature.toFixed(1)}°C\n`;
-      if (relativeHumidity !== undefined && relativeHumidity !== null)
+        hasEnvData = true;
+      }
+      if (relativeHumidity !== undefined && relativeHumidity !== null) {
         message += `💧 <b>Влажность:</b> ${relativeHumidity.toFixed(1)}%\n`;
-      if (barometricPressure !== undefined && barometricPressure !== null)
+        hasEnvData = true;
+      }
+      if (barometricPressure !== undefined && barometricPressure !== null) {
         message += `🌬️ <b>Давление:</b> ${barometricPressure.toFixed(1)} hPa\n`;
-      if (gasResistance !== undefined && gasResistance !== null)
+        hasEnvData = true;
+      }
+      if (gasResistance !== undefined && gasResistance !== null) {
         message += `🌫️ <b>Газы:</b> ${gasResistance.toFixed(0)} Ω\n`;
+        hasEnvData = true;
+      }
+
+      // Add Environment RX information только если есть реальные данные
+      if (hasEnvData) {
+        const envRxRssi = environmentMetrics?.rxRssi;
+        const envRxSnr = environmentMetrics?.rxSnr;
+        const envHop = environmentMetrics?.hopLimit || environmentMetrics?.hop;
+        const envGatewayId = environmentMetrics?.gatewayId;
+        const envTimestamp =
+          environmentMetrics?.serverTime || environmentMetrics?.timestamp;
+
+        if (
+          envRxRssi &&
+          envRxSnr &&
+          envRxRssi !== "N/A" &&
+          envRxSnr !== "N/A" &&
+          envGatewayId
+        ) {
+          const gatewayInfo = gatewayInfoMap[envGatewayId];
+          if (gatewayInfo) {
+            message += `🛰️ <b>Environment RX:</b> ${escapeHtml(
+              gatewayInfo.longName
+            )} (${escapeHtml(gatewayInfo.idHex)}) `;
+            const formattedEnvHop = formatHopCount(envHop);
+            if (formattedEnvHop) {
+              message += `${formattedEnvHop} `;
+            }
+            message += `RSSI/SNR: ${envRxRssi}/${envRxSnr}`;
+            if (envTimestamp) {
+              message += ` ${formatTimeAgo(envTimestamp)}`;
+            }
+            message += `\n`;
+          }
+        }
+      }
     }
+    message += `\n`;
+  }
 
-    // Add Environment RX information
-    const envRxRssi = environmentMetrics?.rxRssi;
-    const envRxSnr = environmentMetrics?.rxSnr;
-    const envHop = environmentMetrics?.hopLimit || environmentMetrics?.hop;
-    const envGatewayId = environmentMetrics?.gatewayId;
-    const envTimestamp =
-      environmentMetrics?.serverTime || environmentMetrics?.timestamp;
+  // Map Report section
+  if (mapReport?.rawData || mapReportHistory.length > 0) {
+    const mapData = mapReport?.rawData || mapReportHistory[0]?.rawData;
+    if (mapData) {
+      message += `🗺️ <b>Map Report:</b>\n`;
 
-    if (
-      envRxRssi &&
-      envRxSnr &&
-      envRxRssi !== "N/A" &&
-      envRxSnr !== "N/A" &&
-      envGatewayId
-    ) {
-      const gatewayInfo = gatewayInfoMap[envGatewayId];
-      if (gatewayInfo) {
-        message += `🛰️ <b>Environment RX:</b> ${escapeHtml(
-          gatewayInfo.longName
-        )} (${escapeHtml(gatewayInfo.idHex)}) `;
-        const formattedEnvHop = formatHopCount(envHop);
-        if (formattedEnvHop) {
-          message += `${formattedEnvHop} `;
+      // Support both camelCase and snake_case field names
+      // Map Report данные могут быть в decoded или напрямую
+      const decodedData = mapData.decoded || mapData;
+      const longName = decodedData.longName || decodedData.long_name;
+      const shortName = decodedData.shortName || decodedData.short_name;
+      const role = decodedData.role;
+      const hwModel = decodedData.hwModel || decodedData.hw_model;
+      const firmwareVersion =
+        decodedData.firmwareVersion || decodedData.firmware_version;
+      const region = decodedData.region;
+      const modemPreset = decodedData.modemPreset || decodedData.modem_preset;
+      const hasDefaultChannel =
+        decodedData.hasDefaultChannel || decodedData.has_default_channel;
+      const latitudeI = decodedData.latitudeI || decodedData.latitude_i;
+      const longitudeI = decodedData.longitudeI || decodedData.longitude_i;
+      const altitude = decodedData.altitude;
+      const positionPrecision =
+        decodedData.positionPrecision || decodedData.position_precision;
+      const numOnlineLocalNodes =
+        decodedData.numOnlineLocalNodes || decodedData.num_online_local_nodes;
+
+      if (longName) message += `📝 <b>Имя:</b> ${escapeHtml(longName)}\n`;
+      if (shortName)
+        message += `🏷️ <b>Короткое имя:</b> ${escapeHtml(shortName)}\n`;
+      if (role !== undefined)
+        message += `⚡ <b>Роль:</b> ${escapeHtml(getRoleName(role))}\n`;
+      if (hwModel !== undefined)
+        message += `🔧 <b>Модель:</b> ${escapeHtml(getHwModelName(hwModel))}\n`;
+      if (firmwareVersion)
+        message += `💾 <b>Прошивка:</b> ${escapeHtml(firmwareVersion)}\n`;
+      if (region !== undefined)
+        message += `🌍 <b>Регион:</b> ${escapeHtml(getRegionName(region))}\n`;
+      if (modemPreset !== undefined)
+        message += `📡 <b>Модем:</b> ${modemPreset}\n`;
+      if (hasDefaultChannel !== undefined)
+        message += `🔐 <b>Канал по умолчанию:</b> ${
+          hasDefaultChannel ? "Да" : "Нет"
+        }\n`;
+
+      if (latitudeI !== undefined && longitudeI !== undefined) {
+        const lat = (latitudeI / 1e7).toFixed(6);
+        const lon = (longitudeI / 1e7).toFixed(6);
+        message += `📍 <b>Позиция:</b> <a href="https://yandex.ru/maps/?ll=${lon},${lat}&z=15&pt=${lon},${lat},pm2rdm">${lat}, ${lon}</a>\n`;
+        if (altitude !== undefined && altitude !== 0) {
+          message += `🏔️ <b>Высота:</b> ${altitude} м\n`;
         }
-        message += `RSSI/SNR: ${envRxRssi}/${envRxSnr}`;
-        if (envTimestamp) {
-          message += ` ${formatTimeAgo(envTimestamp)}`;
+        if (positionPrecision !== undefined) {
+          message += `🎯 <b>Точность:</b> ${positionPrecision} бит\n`;
         }
-        message += `\n`;
+      }
+
+      if (numOnlineLocalNodes !== undefined) {
+        message += `👥 <b>Узлов рядом:</b> ${numOnlineLocalNodes}\n`;
+      }
+
+      // Add Map Report RX information
+      const mapRxRssi = mapReport?.rxRssi;
+      const mapRxSnr = mapReport?.rxSnr;
+      const mapHop = mapReport?.hopLimit || mapReport?.hop;
+      const mapGatewayId = mapReport?.gatewayId;
+      const mapTimestamp = mapReport?.serverTime || mapReport?.timestamp;
+
+      if (
+        mapRxRssi &&
+        mapRxSnr &&
+        mapRxRssi !== "N/A" &&
+        mapRxSnr !== "N/A" &&
+        mapGatewayId
+      ) {
+        const gatewayInfo = gatewayInfoMap[mapGatewayId];
+        if (gatewayInfo) {
+          message += `🛰️ <b>Map Report RX:</b> ${escapeHtml(
+            gatewayInfo.longName
+          )} (${escapeHtml(gatewayInfo.idHex)}) `;
+          const formattedMapHop = formatHopCount(mapHop);
+          if (formattedMapHop) {
+            message += `${formattedMapHop} `;
+          }
+          message += `RSSI/SNR: ${mapRxRssi}/${mapRxSnr}`;
+          if (mapTimestamp) {
+            message += ` ${formatTimeAgo(mapTimestamp)}`;
+          }
+          message += `\n`;
+        }
+      }
+    }
+    message += `\n`;
+  }
+
+  // Traceroute section - показываем всегда, когда есть данные
+  if (traceroute?.rawData || tracerouteHistory.length > 0) {
+    const traceData = traceroute?.rawData || tracerouteHistory[0]?.rawData;
+    if (traceData) {
+      message += `🛤️ <b>Traceroute:</b>\n`;
+
+      // Support both camelCase and snake_case field names
+      const dest = traceData.dest;
+      const back = traceData.back;
+      const wantResponse = traceData.wantResponse || traceData.want_response;
+      const route = traceData.route;
+      const error = traceData.error;
+      const payloadSize = traceData.payloadSize;
+
+      // Дополнительные поля для реальных Traceroute данных
+      const snrTowards = traceData.snr_towards;
+      const routeBack = traceData.route_back;
+      const snrBack = traceData.snr_back;
+
+      let hasTraceData = false;
+
+      // Показываем информацию об ошибке, если есть
+      if (error) {
+        message += `⚠️ <b>Ошибка:</b> ${escapeHtml(error)}\n`;
+        if (payloadSize !== undefined) {
+          message += `📦 <b>Размер payload:</b> ${payloadSize} байт\n`;
+        }
+      }
+
+      if (dest !== undefined) {
+        const destHex = `!${dest.toString(16).padStart(8, "0")}`;
+        message += `🎯 <b>Назначение:</b> ${escapeHtml(destHex)}\n`;
+        hasTraceData = true;
+      }
+
+      if (back !== undefined) {
+        const backHex = `!${back.toString(16).padStart(8, "0")}`;
+        message += `🔙 <b>Обратно:</b> ${escapeHtml(backHex)}\n`;
+        hasTraceData = true;
+      }
+
+      if (wantResponse !== undefined) {
+        message += `❓ <b>Ожидает ответ:</b> ${wantResponse ? "Да" : "Нет"}\n`;
+        hasTraceData = true;
+      }
+
+      // Отображаем маршрут с SNR данными
+      if (
+        route &&
+        Array.isArray(route) &&
+        route.length > 0 &&
+        snrTowards &&
+        Array.isArray(snrTowards) &&
+        snrTowards.length > 0
+      ) {
+        message += `🗺️ <b>Маршрут:</b>\n`;
+        route.forEach((nodeId, index) => {
+          const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+          const snr = snrTowards[index];
+          if (snr !== undefined) {
+            message += `  ${index + 1}. ${escapeHtml(nodeHex)} (${snr} dB)\n`;
+          } else {
+            message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
+          }
+        });
+        hasTraceData = true;
+      } else if (route && Array.isArray(route) && route.length > 0) {
+        // Fallback если нет SNR данных
+        message += `🗺️ <b>Маршрут:</b>\n`;
+        route.forEach((nodeId, index) => {
+          const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+          message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
+        });
+        hasTraceData = true;
+      }
+
+      // Отображаем обратный маршрут с SNR данными
+      if (
+        routeBack &&
+        Array.isArray(routeBack) &&
+        routeBack.length > 0 &&
+        snrBack &&
+        Array.isArray(snrBack) &&
+        snrBack.length > 0
+      ) {
+        message += `🔙 <b>Обратный маршрут:</b>\n`;
+        routeBack.forEach((nodeId, index) => {
+          const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+          const snr = snrBack[index];
+          if (snr !== undefined) {
+            message += `  ${index + 1}. ${escapeHtml(nodeHex)} (${snr} dB)\n`;
+          } else {
+            message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
+          }
+        });
+        hasTraceData = true;
+      } else if (
+        routeBack &&
+        Array.isArray(routeBack) &&
+        routeBack.length > 0
+      ) {
+        // Fallback если нет SNR данных
+        message += `🔙 <b>Обратный маршрут:</b>\n`;
+        routeBack.forEach((nodeId, index) => {
+          const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
+          message += `  ${index + 1}. ${escapeHtml(nodeHex)}\n`;
+        });
+        hasTraceData = true;
+      }
+
+      // Отображаем SNR обратного маршрута
+      if (snrBack && Array.isArray(snrBack) && snrBack.length > 0) {
+        message += `📶 <b>SNR обратно:</b> ${snrBack
+          .map((snr) => `${snr} dB`)
+          .join(", ")}\n`;
+        hasTraceData = true;
+      }
+
+      // Показываем Traceroute RX если есть данные или если есть ошибка
+      if (hasTraceData || error) {
+        // Add Traceroute RX information
+        const traceRxRssi = traceroute?.rxRssi;
+        const traceRxSnr = traceroute?.rxSnr;
+        const traceHop = traceroute?.hopLimit || traceroute?.hop;
+        const traceGatewayId = traceroute?.gatewayId;
+        const traceTimestamp = traceroute?.serverTime || traceroute?.timestamp;
+
+        if (
+          traceRxRssi &&
+          traceRxSnr &&
+          traceRxRssi !== "N/A" &&
+          traceRxSnr !== "N/A" &&
+          traceGatewayId
+        ) {
+          const gatewayInfo = gatewayInfoMap[traceGatewayId];
+          if (gatewayInfo) {
+            message += `🛰️ <b>Traceroute RX:</b> ${escapeHtml(
+              gatewayInfo.longName
+            )} (${escapeHtml(gatewayInfo.idHex)}) `;
+            const formattedTraceHop = formatHopCount(traceHop);
+            if (formattedTraceHop) {
+              message += `${formattedTraceHop} `;
+            }
+            message += `RSSI/SNR: ${traceRxRssi}/${traceRxSnr}`;
+            if (traceTimestamp) {
+              message += ` ${formatTimeAgo(traceTimestamp)}`;
+            }
+            message += `\n`;
+          }
+        }
       }
     }
     message += `\n`;

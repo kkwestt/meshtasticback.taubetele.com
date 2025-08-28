@@ -438,10 +438,12 @@ class MeshtasticRedisClient {
       // Обновляем время последней активности для карты
       await this.updateDotActivityTime(from, event, server);
 
+      // Initialize dataToSave with event.data as default
+      let dataToSave = event.data;
+
       // Сохраняем все расшифрованные сообщения по portnum (НОВАЯ СХЕМА)
       if (event.data?.portnum) {
         // Декодируем payload если он есть
-        let dataToSave = event.data;
         if (event.data.payload) {
           try {
             const payloadBuffer = Buffer.from(event.data.payload, "base64");
@@ -506,10 +508,10 @@ class MeshtasticRedisClient {
           rxSnr: event.rxSnr,
           hopLimit: event.hopLimit,
           type: "broadcast", // Устанавливаем тип как broadcast для текстовых сообщений
-          data: event.data,
+          data: dataToSave?.text || dataToSave, // Текст сообщения
           text:
-            event.data?.text ||
-            (typeof event.data === "string" ? event.data : "N/A"),
+            dataToSave?.text ||
+            (typeof dataToSave === "string" ? dataToSave : "N/A"),
         };
 
         // Вызываем обработчик Telegram сообщений
