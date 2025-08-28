@@ -59,28 +59,15 @@ export class HTTPServer {
     this.app.get("/stats", this.handleStatsEndpoint.bind(this));
 
     // Endpoints для получения данных по portnum
-    this.app.get(
-      "/portnum/:portnumName",
-      this.handlePortnumAllEndpoint.bind(this)
-    );
+    nen;
     this.app.get(
       "/portnum/:portnumName/:deviceId",
       this.handlePortnumDeviceEndpoint.bind(this)
     );
-    this.app.get("/portnum-stats", this.handlePortnumStatsEndpoint.bind(this));
-
-    // Nodes endpoint - список всех устройств
-    this.app.get("/nodes", this.handleNodesEndpoint.bind(this));
 
     // Dots endpoint - данные для карты
     this.app.get("/dots", this.handleDotsEndpoint.bind(this));
     this.app.get("/dots/:deviceId", this.handleSingleDotEndpoint.bind(this));
-
-    // Cache status endpoint
-    this.app.get("/cache-status", this.handleCacheStatusEndpoint.bind(this));
-
-    // Test endpoint for dots
-    this.app.post("/test-dots", this.handleTestDotsEndpoint.bind(this));
 
     // Endpoint для формата portnumName:deviceId
     this.app.get(
@@ -135,7 +122,6 @@ export class HTTPServer {
           data: {
             "/dots": "Map data for all devices",
             "/dots/:deviceId": "Map data for specific device",
-            "/nodes": "List of all devices",
             "/portnum/:portnumName": "All messages by portnum type",
             "/portnum/:portnumName/:deviceId":
               "Device messages by portnum type",
@@ -144,12 +130,9 @@ export class HTTPServer {
           system: {
             "/health": "Health check",
             "/stats": "Server statistics",
-            "/cache-status": "Cache status",
-            "/portnum-stats": "Statistics by portnum type",
           },
           admin: {
             "/admin": "Admin panel",
-            "/api/delete": "Delete device data (POST)",
           },
         },
 
@@ -224,50 +207,6 @@ export class HTTPServer {
   }
 
   /**
-   * Обрабатывает получение всех сообщений по portnum
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handlePortnumAllEndpoint(req, res) {
-    try {
-      const { portnumName } = req.params;
-
-      // Валидация portnum
-      const validPortnums = [
-        "TEXT_MESSAGE_APP",
-        "POSITION_APP",
-        "NODEINFO_APP",
-        "TELEMETRY_APP",
-        "NEIGHBORINFO_APP",
-        "WAYPOINT_APP",
-        "MAP_REPORT_APP",
-        "TRACEROUTE_APP",
-      ];
-      if (!validPortnums.includes(portnumName)) {
-        return res.status(400).json({
-          error: "Invalid portnum name",
-          validPortnums: validPortnums,
-        });
-      }
-
-      const data = await this.redisManager.getAllPortnumMessages(portnumName);
-
-      res.json({
-        portnum: portnumName,
-        deviceCount: Object.keys(data).length,
-        timestamp: Date.now(),
-        data: data,
-      });
-    } catch (error) {
-      handleEndpointError(
-        error,
-        res,
-        `Portnum all endpoint (${req.params.portnumName})`
-      );
-    }
-  }
-
-  /**
    * Обрабатывает получение сообщений по portnum для конкретного устройства
    * @param {Request} req - Express request
    * @param {Response} res - Express response
@@ -328,39 +267,6 @@ export class HTTPServer {
         res,
         `Portnum device endpoint (${req.params.portnumName}:${req.params.deviceId})`
       );
-    }
-  }
-
-  /**
-   * Обрабатывает получение статистики по portnum
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handlePortnumStatsEndpoint(req, res) {
-    try {
-      const stats = await this.redisManager.getPortnumStats();
-
-      // Добавляем общую статистику
-      const totalDevices = Object.values(stats).reduce(
-        (sum, stat) => sum + stat.deviceCount,
-        0
-      );
-      const totalMessages = Object.values(stats).reduce(
-        (sum, stat) => sum + stat.totalMessages,
-        0
-      );
-
-      res.json({
-        timestamp: Date.now(),
-        summary: {
-          totalDevices,
-          totalMessages,
-          portnumTypes: Object.keys(stats).length,
-        },
-        byPortnum: stats,
-      });
-    } catch (error) {
-      handleEndpointError(error, res, "Portnum stats endpoint");
     }
   }
 
@@ -434,55 +340,6 @@ export class HTTPServer {
   }
 
   /**
-   * Строит ответ для nodes endpoint
-   * @returns {Object} - Данные узлов
-   */
-  async buildNodesResponse() {
-    try {
-      // Получаем данные точек для карты
-      const dots = await this.redisManager.getAllDotData();
-
-      // Получаем статистику по portnum для подсчета активности
-      const portnumStats = await this.redisManager.getPortnumStats();
-
-      const nodes = {};
-
-      // Обрабатываем каждую точку
-      Object.entries(dots).forEach(([deviceId, dotData]) => {
-        nodes[deviceId] = {
-          id: deviceId,
-          longName: dotData.longName || "",
-          shortName: dotData.shortName || "",
-          latitude: dotData.latitude || 0,
-          longitude: dotData.longitude || 0,
-          lastSeen: dotData.s_time || 0,
-          hasLocation: !!(
-            dotData.latitude &&
-            dotData.longitude &&
-            dotData.latitude !== 0 &&
-            dotData.longitude !== 0
-          ),
-          hasName: !!(dotData.longName || dotData.shortName),
-        };
-      });
-
-      return {
-        timestamp: Date.now(),
-        count: Object.keys(nodes).length,
-        nodes: nodes,
-      };
-    } catch (error) {
-      console.error("Error building nodes response:", error.message);
-      return {
-        timestamp: Date.now(),
-        count: 0,
-        nodes: {},
-        error: error.message,
-      };
-    }
-  }
-
-  /**
    * Обрабатывает /dots endpoint - возвращает все данные для карты
    * @param {Request} req - Express request
    * @param {Response} res - Express response
@@ -547,60 +404,6 @@ export class HTTPServer {
         res,
         `Single dot endpoint (${req.params.deviceId})`
       );
-    }
-  }
-
-  /**
-   * Обрабатывает /cache-status endpoint - возвращает статус кэша
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handleCacheStatusEndpoint(req, res) {
-    try {
-      const cacheStats = this.redisManager.getCacheStats();
-
-      res.json({
-        timestamp: Date.now(),
-        cache: cacheStats,
-        cache_ttl_ms: this.redisManager.cacheTTL,
-        cache_ttl_seconds: Math.floor(this.redisManager.cacheTTL / 1000),
-      });
-    } catch (error) {
-      handleEndpointError(error, res, "Cache status endpoint");
-    }
-  }
-
-  /**
-   * Тестовый эндпоинт для проверки работы dots
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handleTestDotsEndpoint(req, res) {
-    try {
-      const { deviceId, testData } = req.body;
-
-      if (!deviceId) {
-        return res.status(400).json({ error: "Device ID is required" });
-      }
-
-      // Создаем тестовые данные
-      const defaultTestData = {
-        longName: testData?.longName || "Test Device",
-        shortName: testData?.shortName || "TEST",
-        latitude: testData?.latitude || 55.7558,
-        longitude: testData?.longitude || 37.6176,
-      };
-
-      await this.redisManager.updateDotData(deviceId, defaultTestData);
-
-      res.json({
-        success: true,
-        deviceId: deviceId,
-        testData: defaultTestData,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      handleEndpointError(error, res, "Test dots endpoint");
     }
   }
 

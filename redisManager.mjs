@@ -28,7 +28,7 @@ export class RedisManager {
     this.redis = new Redis(config);
     this.cache = new Map();
     this.cacheTimestamps = new Map();
-    this.cacheTTL = 30000; // 30 секунд
+    this.cacheTTL = 15000; // 15 секунд
     this.isQuerying = false;
     this.queryLock = new Map();
 
