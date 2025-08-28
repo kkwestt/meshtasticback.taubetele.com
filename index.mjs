@@ -156,7 +156,7 @@ class MeshtasticRedisClient {
    * Инициализирует Telegram бот
    */
   initializeTelegramBot() {
-    initializeTelegramBot(this.redisManager.redis);
+    initializeTelegramBot(this.redisManager);
   }
 
   /**
@@ -457,9 +457,6 @@ class MeshtasticRedisClient {
             };
 
             // Обновляем данные для карты на основе типа сообщения
-            console.log(
-              `🔍 Отладка MQTT: deviceId=${event.from}, gatewayId=${event.gatewayId}, rawDataId=${decodedPayload.data.id}`
-            );
             await this.updateDotDataFromPortnum(
               event.data.portnum,
               event.from,
@@ -495,6 +492,32 @@ class MeshtasticRedisClient {
           event.data.portnum,
           event.from,
           portnumData
+        );
+      }
+
+      // Обрабатываем Telegram сообщения для текстовых сообщений
+      if (eventType === "message" && event.data?.portnum === 1) {
+        // Создаем событие в формате, ожидаемом handleTelegramMessage
+        const telegramEvent = {
+          id: event.id,
+          from: event.from,
+          gatewayId: event.gatewayId,
+          rxRssi: event.rxRssi,
+          rxSnr: event.rxSnr,
+          hopLimit: event.hopLimit,
+          type: "broadcast", // Устанавливаем тип как broadcast для текстовых сообщений
+          data: event.data,
+          text:
+            event.data?.text ||
+            (typeof event.data === "string" ? event.data : "N/A"),
+        };
+
+        // Вызываем обработчик Telegram сообщений
+        await handleTelegramMessage(
+          this.redisManager,
+          server,
+          fullTopic,
+          telegramEvent
         );
       }
     } catch (error) {

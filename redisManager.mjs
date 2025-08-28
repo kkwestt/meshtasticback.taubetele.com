@@ -491,14 +491,8 @@ export class RedisManager {
         const isMqttDevice = options.gatewayId === options.rawDataId;
 
         if (isMqttDevice) {
-          console.log(
-            `🔍 MQTT устройство обнаружено: ${deviceId} (gatewayId=${options.gatewayId}, rawDataId=${options.rawDataId})`
-          );
           fieldsToUpdate.mqtt = "1";
         } else {
-          console.log(
-            `🔍 Обычное устройство: ${deviceId} (gatewayId=${options.gatewayId}, rawDataId=${options.rawDataId})`
-          );
           // Не устанавливаем флаг mqtt для обычных устройств
         }
       }

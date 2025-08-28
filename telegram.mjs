@@ -186,8 +186,8 @@ const formatTimeAgo = (timestamp) => {
     if (diffMs < 0) return ""; // Время в будущем - некорректно
 
     const diffMinutes = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+    const diffHours = Math.floor(diffMs / 360000);
+    const diffDays = Math.floor(diffMs / 8640000);
 
     if (diffMinutes < 1) return "[только что]";
     if (diffMinutes < 60) return `[${diffMinutes} мин назад]`;
@@ -233,9 +233,6 @@ const toNumericId = (deviceId) => {
     : deviceId;
 };
 
-
-
-
 // Check if device is an MQTT gateway
 const checkIfGateway = (role, server, deviceId, gatewayInfoMap) => {
   try {
@@ -257,6 +254,183 @@ const checkIfGateway = (role, server, deviceId, gatewayInfoMap) => {
   } catch (error) {
     console.error("Error in checkIfGateway:", error.message);
     return false;
+  }
+};
+
+// Get gateway information batch
+const getGatewayInfoBatch = async (redis, gatewayIds) => {
+  try {
+    const gatewayInfoMap = {};
+
+    for (const gatewayId of gatewayIds) {
+      if (!gatewayId) continue;
+
+      try {
+        const numericId = toNumericId(gatewayId);
+
+        // Сначала пытаемся получить данные из NODEINFO_APP
+        const userData = await redis.getPortnumMessages(
+          "NODEINFO_APP",
+          numericId,
+          1
+        );
+
+        let longName = "Unknown";
+        let shortName = "N/A";
+
+        if (userData && userData[0]) {
+          // Проверяем разные варианты структуры данных
+          const rawData = userData[0].rawData || userData[0].data;
+          longName =
+            rawData?.longName ||
+            rawData?.long_name ||
+            rawData?.text ||
+            longName;
+          shortName = rawData?.shortName || rawData?.short_name || shortName;
+        } else {
+          // Если нет данных в NODEINFO_APP, пытаемся получить из dots (карта устройств)
+          try {
+            const rawData = await redis.redis.hgetall(`dots:${numericId}`);
+            if (rawData && Object.keys(rawData).length > 0) {
+              // Парсим данные как в Redis менеджере
+              const dotData = {};
+              Object.entries(rawData).forEach(([key, value]) => {
+                try {
+                  dotData[key] = JSON.parse(value);
+                } catch {
+                  if (!isNaN(value) && value !== "") {
+                    dotData[key] = Number(value);
+                  } else {
+                    dotData[key] = value;
+                  }
+                }
+              });
+
+              // Используем данные из dots если они есть
+              if (dotData.longName && dotData.longName.trim() !== "") {
+                longName = dotData.longName;
+              }
+              if (dotData.shortName && dotData.shortName.trim() !== "") {
+                shortName = dotData.shortName;
+              }
+            }
+          } catch (dotError) {
+            console.error(
+              `Error getting dot data for gateway ${gatewayId}:`,
+              dotError.message
+            );
+          }
+        }
+
+        gatewayInfoMap[gatewayId] = {
+          idHex: gatewayId,
+          numericId: numericId,
+          longName: longName,
+          shortName: shortName,
+        };
+      } catch (error) {
+        console.error(
+          `Error getting gateway info for ${gatewayId}:`,
+          error.message
+        );
+        // Создаем базовую информацию в случае ошибки
+        gatewayInfoMap[gatewayId] = {
+          idHex: gatewayId,
+          numericId: toNumericId(gatewayId),
+          longName: "Unknown",
+          shortName: "N/A",
+        };
+      }
+    }
+
+    return gatewayInfoMap;
+  } catch (error) {
+    console.error("Error in getGatewayInfoBatch:", error.message);
+    return {};
+  }
+};
+
+// Get device statistics from Redis using new schema
+const getDeviceStats = async (redis, deviceId) => {
+  try {
+    const numericId = toNumericId(deviceId);
+
+    // Получаем данные по новой схеме (по portnum)
+    const [
+      userMessages,
+      positionMessages,
+      deviceMetricsMessages,
+      environmentMetricsMessages,
+    ] = await Promise.all([
+      redis.getPortnumMessages("NODEINFO_APP", numericId, 1),
+      redis.getPortnumMessages("POSITION_APP", numericId, 1),
+      redis.getPortnumMessages("TELEMETRY_APP", numericId, 1),
+      redis.getPortnumMessages("TELEMETRY_APP", numericId, 1), // Environment metrics тоже в TELEMETRY_APP
+    ]);
+
+    // Получаем последние сообщения для истории
+    const [
+      userHistory,
+      positionHistory,
+      deviceMetricsHistory,
+      envMetricsHistory,
+    ] = await Promise.all([
+      redis.getPortnumMessages("NODEINFO_APP", numericId, 10),
+      redis.getPortnumMessages("POSITION_APP", numericId, 10),
+      redis.getPortnumMessages("TELEMETRY_APP", numericId, 10),
+      redis.getPortnumMessages("TELEMETRY_APP", numericId, 10),
+    ]);
+
+    // Получаем последние текстовые сообщения
+    const lastMessages = await redis.getPortnumMessages(
+      "TEXT_MESSAGE_APP",
+      numericId,
+      5
+    );
+
+    // Получаем данные для карты (dots) - используем прямой доступ к Redis клиенту
+    let dotData = {};
+    try {
+      const rawData = await redis.redis.hgetall(`dots:${numericId}`);
+      if (rawData && Object.keys(rawData).length > 0) {
+        // Парсим данные как в Redis менеджере
+        Object.entries(rawData).forEach(([key, value]) => {
+          try {
+            dotData[key] = JSON.parse(value);
+          } catch {
+            if (!isNaN(value) && value !== "") {
+              dotData[key] = Number(value);
+            } else {
+              dotData[key] = value;
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error(`Error getting dot data for ${numericId}:`, error.message);
+    }
+
+    // Формируем объект статистики
+    const stats = {
+      deviceId: deviceId,
+      numericId: numericId,
+      user: userMessages[0] || null,
+      position: positionMessages[0] || null,
+      deviceMetrics: deviceMetricsMessages[0] || null,
+      environmentMetrics: environmentMetricsMessages[0] || null,
+      userData: dotData,
+      gpsHistory: positionHistory,
+      deviceMetricsHistory: deviceMetricsHistory,
+      envMetricsHistory: envMetricsHistory,
+      lastMessages: lastMessages,
+      // Добавляем информацию о gateway если есть
+      server: userMessages[0]?.server || positionMessages[0]?.server || null,
+    };
+
+    return stats;
+  } catch (error) {
+    console.error("Error getting device stats:", error.message);
+    throw error;
   }
 };
 
@@ -398,10 +572,20 @@ const formatDeviceStats = async (stats, redis) => {
 
       // Try different ways to get message text
       let messageText = "N/A";
-      if (typeof msg.data === "string") {
-        messageText = msg.data;
-      } else if (msg.data?.text) {
-        messageText = msg.data.text;
+      const rawData = msg.rawData || msg.data;
+
+      if (typeof rawData === "string") {
+        messageText = rawData;
+      } else if (rawData?.text) {
+        messageText = rawData.text;
+      } else if (rawData?.payload) {
+        // Если payload в base64, пытаемся декодировать
+        try {
+          const payloadBuffer = Buffer.from(rawData.payload, "base64");
+          messageText = payloadBuffer.toString("utf8");
+        } catch (error) {
+          messageText = rawData.payload;
+        }
       } else if (msg.text) {
         messageText = msg.text;
       } else if (msg.payload) {
@@ -923,3 +1107,6 @@ export const handleTelegramMessage = async (
     sendGroupedMessage(redis, messageId);
   }, MESSAGE_GROUP_TIMEOUT);
 };
+
+// Экспортируем функции для тестирования
+export { getDeviceStats, getGatewayInfoBatch, toNumericId };
