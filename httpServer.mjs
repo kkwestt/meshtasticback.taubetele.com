@@ -590,7 +590,7 @@ export class HTTPServer {
       message: `Endpoint ${req.method} ${req.path} not found`,
       timestamp: Date.now(),
       available_endpoints: {
-        data: ["/dots", "/nodes", "/portnum/:type", "/portnum/:type/:deviceId"],
+        data: ["/dots", "/portnum/:type/:deviceId"],
         system: ["/health", "/stats", "/cache-status"],
         admin: ["/admin"],
       },
@@ -614,19 +614,9 @@ export class HTTPServer {
         `    GET /dots/:deviceId          - Map data for specific device`
       );
       console.log(`    GET /nodes                   - List of all devices`);
-      console.log(`    GET /portnum/:portnumName    - All messages by portnum`);
-      console.log(
-        `    GET /portnum/:portnumName/:deviceId - Device messages by portnum`
-      );
-      console.log(
-        `    GET /:portnumName::deviceId  - Device messages (colon format)`
-      );
       console.log(`  СИСТЕМА:`);
       console.log(`    GET /health                  - Health check`);
       console.log(`    GET /stats                   - Server statistics`);
-      console.log(`    GET /cache-status            - Cache status`);
-      console.log(`    GET /portnum-stats           - Statistics by portnum`);
-      console.log(`  АДМИН:`);
       console.log(`    GET /admin                   - Admin panel`);
       console.log(`    POST /api/delete             - Delete device data`);
       console.log(`  `);
