@@ -70,8 +70,8 @@ export const isValidPacket = (arrayBuffer) => {
   try {
     // Проверяем, что это корректная структура protobuf
     const buffer = arrayBuffer.buffer
-      ? new Uint8Array(arrayBuffer)
-      : arrayBuffer;
+    ? new Uint8Array(arrayBuffer)
+    : arrayBuffer;
 
     // Первый байт должен указывать на поле 1 (packet) и быть wire type 2 (length-delimited)
     const firstByte = buffer[0];
@@ -87,14 +87,14 @@ export const isValidPacket = (arrayBuffer) => {
 
     // Декодируем varint длину
     while (lengthPos < buffer.length && shift < 32) {
-      const byte = buffer[lengthPos];
-      length |= (byte & 0x7f) << shift;
-      lengthPos++;
+    const byte = buffer[lengthPos];
+    length |= (byte & 0x7f) << shift;
+    lengthPos++;
 
-      if ((byte & 0x80) === 0) {
-        break; // Конец varint
-      }
-      shift += 7;
+    if ((byte & 0x80) === 0) {
+    break; // Конец varint
+    }
+    shift += 7;
     }
 
     // Проверяем, что указанная длина не превышает размер буфера
@@ -265,6 +265,7 @@ export const PORTNUM_MAPPING = {
   1: "TEXT_MESSAGE_APP",
   3: "POSITION_APP",
   4: "NODEINFO_APP",
+  5: "ROUTING_APP",
   67: "TELEMETRY_APP",
   70: "TRACEROUTE_APP",
   71: "NEIGHBORINFO_APP",
@@ -274,6 +275,7 @@ export const PORTNUM_MAPPING = {
   TEXT_MESSAGE_APP: "TEXT_MESSAGE_APP",
   POSITION_APP: "POSITION_APP",
   NODEINFO_APP: "NODEINFO_APP",
+  ROUTING_APP: "ROUTING_APP",
   TELEMETRY_APP: "TELEMETRY_APP",
   TRACEROUTE_APP: "TRACEROUTE_APP",
   NEIGHBORINFO_APP: "NEIGHBORINFO_APP",

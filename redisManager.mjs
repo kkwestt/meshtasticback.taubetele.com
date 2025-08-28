@@ -59,47 +59,7 @@ export class RedisManager {
     return await this.redis.ping();
   }
 
-  /**
-   * Сохраняет данные пользователя
-   * @param {string} userId - ID пользователя
-   * @param {Object} userData - Данные пользователя
-   */
-  async saveUserData(userId, userData) {
-    try {
-      await this.redis.hset(`user:${userId}`, userData);
 
-      // Инвалидируем кэш пользователя
-      this.invalidateUserCache(userId);
-    } catch (error) {
-      console.error("Error saving user data:", error.message);
-    }
-  }
-
-  /**
-   * Получает данные пользователя
-   * @param {string} userId - ID пользователя
-   * @returns {Object} - Данные пользователя
-   */
-  async getUserData(userId) {
-    const cacheKey = `user_${userId}`;
-
-    if (this.isCacheValid(cacheKey)) {
-      return this.cache.get(cacheKey);
-    }
-
-    try {
-      const data = await this.redis.hgetall(`user:${userId}`);
-
-      // Кэшируем результат
-      this.cache.set(cacheKey, data);
-      this.cacheTimestamps.set(cacheKey, Date.now());
-
-      return data;
-    } catch (error) {
-      console.error(`Error getting user data for ${userId}:`, error.message);
-      return {};
-    }
-  }
 
   /**
    * Сохраняет сообщение по portnum
@@ -412,8 +372,6 @@ export class RedisManager {
         // Данные для карты
         `dots:${numericId}`,
 
-        // Данные пользователя
-        `user:${hexId}`,
       ];
 
       // Собираем все существующие ключи для удаления

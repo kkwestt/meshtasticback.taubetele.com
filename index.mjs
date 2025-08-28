@@ -513,23 +513,6 @@ class MeshtasticRedisClient {
             shortName: shortName || "",
           });
         }
-
-        // Сохраняем данные пользователя отдельно
-        if (id) {
-          const userRecord = {
-            from: deviceId,
-            shortName: shortName || "",
-            longName: longName || "",
-            macaddr: formatMacAddress(decodedData.macaddr),
-            publicKey: bufferToHex(
-              decodedData.public_key || decodedData.publicKey
-            ),
-            hwModel: decodedData.hw_model || decodedData.hwModel,
-            role: decodedData.role,
-          };
-
-          await this.redisManager.saveUserData(id, userRecord);
-        }
       } else if (portnum === 3 || portnum === "POSITION_APP") {
         // Данные позиции
         const latitudeI = decodedData.latitude_i || decodedData.latitudeI;
