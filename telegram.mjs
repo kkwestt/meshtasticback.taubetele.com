@@ -1472,6 +1472,7 @@ export const initializeTelegramBot = (redis) => {
 };
 
 // Handle Telegram message from MQTT
+// Only process messages sent to all devices (to === 4294967295)
 export const handleTelegramMessage = async (
   redis,
   server,
@@ -1481,7 +1482,8 @@ export const handleTelegramMessage = async (
   if (
     !server.telegram ||
     !isAllowedTopic(fullTopic) ||
-    event.type !== "broadcast"
+    event.type !== "broadcast" ||
+    event.to !== 4294967295
   ) {
     return;
   }
