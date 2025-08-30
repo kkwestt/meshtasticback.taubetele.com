@@ -532,9 +532,6 @@ class MeshtasticRedisClient {
         };
 
         const portnumName = this.getPortnumName(event.data.portnum);
-        console.log(
-          `💾 Сохраняю ${portnumName} (${event.data.portnum}) для устройства ${event.from}`
-        );
 
         await this.redisManager.savePortnumMessage(
           event.data.portnum,
