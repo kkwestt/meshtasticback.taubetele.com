@@ -955,12 +955,29 @@ const formatDeviceStats = async (stats, redis) => {
       const toDevice = traceroute?.to || tracerouteHistory[0]?.to;
       let fromHex, toHex;
 
+      // Функция для получения отображаемого имени устройства
+      const getDeviceDisplayName = async (deviceId) => {
+        try {
+          const deviceHex = `!${deviceId.toString(16).padStart(8, "0")}`;
+          const deviceInfo = await getGatewayInfoBatch(redis, [deviceHex]);
+          const info = deviceInfo[deviceHex];
+          return info?.longName || deviceHex;
+        } catch (error) {
+          return `!${deviceId.toString(16).padStart(8, "0")}`;
+        }
+      };
+
       if (fromDevice && toDevice) {
         fromHex = `!${fromDevice.toString(16).padStart(8, "0")}`;
         toHex = `!${toDevice.toString(16).padStart(8, "0")}`;
+
+        // Получаем отображаемые имена
+        const fromDisplayName = await getDeviceDisplayName(fromDevice);
+        const toDisplayName = await getDeviceDisplayName(toDevice);
+
         message += `📤 <b>От:</b> ${escapeHtml(
-          fromHex
-        )} → <b>К:</b> ${escapeHtml(toHex)}\n`;
+          fromDisplayName
+        )} → <b>К:</b> ${escapeHtml(toDisplayName)}\n`;
 
         // Ищем обратный маршрут - Traceroute от toDevice к fromDevice
         try {
@@ -1048,37 +1065,41 @@ const formatDeviceStats = async (stats, redis) => {
 
         // Добавляем источник с иконкой и ссылкой
         const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+        const fromDisplayName = await getDeviceDisplayName(fromDevice);
         routeParts.push(
           ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
-            fromHex
+            fromDisplayName
           )}</a>`
         );
 
         // Добавляем промежуточные узлы с SNR, иконками и ссылками
-        route.forEach((nodeId, index) => {
+        for (let index = 0; index < route.length; index++) {
+          const nodeId = route[index];
           const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
           const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
+          const nodeDisplayName = await getDeviceDisplayName(nodeId);
           const snr = snrTowards[index];
           if (snr !== undefined) {
             routeParts.push(
               ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
-                nodeHex
+                nodeDisplayName
               )}(${snr}dB)</a>`
             );
           } else {
             routeParts.push(
               ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
-                nodeHex
+                nodeDisplayName
               )}</a>`
             );
           }
-        });
+        }
 
         // Добавляем назначение с иконкой и ссылкой
         const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+        const toDisplayName = await getDeviceDisplayName(toDevice);
         routeParts.push(
           ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
-            toHex
+            toDisplayName
           )}</a>`
         );
 
@@ -1091,28 +1112,31 @@ const formatDeviceStats = async (stats, redis) => {
 
         // Добавляем источник с иконкой и ссылкой
         const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+        const fromDisplayName = await getDeviceDisplayName(fromDevice);
         routeParts.push(
           ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
-            fromHex
+            fromDisplayName
           )}</a>`
         );
 
         // Добавляем промежуточные узлы с иконками и ссылками
-        route.forEach((nodeId) => {
+        for (const nodeId of route) {
           const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
           const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
+          const nodeDisplayName = await getDeviceDisplayName(nodeId);
           routeParts.push(
             ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
-              nodeHex
+              nodeDisplayName
             )}</a>`
           );
-        });
+        }
 
         // Добавляем назначение с иконкой и ссылкой
         const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+        const toDisplayName = await getDeviceDisplayName(toDevice);
         routeParts.push(
           ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
-            toHex
+            toDisplayName
           )}</a>`
         );
 
@@ -1129,37 +1153,41 @@ const formatDeviceStats = async (stats, redis) => {
 
           // Добавляем назначение (бывший источник) с иконкой и ссылкой
           const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+          const toDisplayName = await getDeviceDisplayName(toDevice);
           routeParts.push(
             ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
-              toHex
+              toDisplayName
             )}</a>`
           );
 
           // Добавляем промежуточные узлы с SNR, иконками и ссылками
-          routeBack.forEach((nodeId, index) => {
+          for (let index = 0; index < routeBack.length; index++) {
+            const nodeId = routeBack[index];
             const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
             const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
+            const nodeDisplayName = await getDeviceDisplayName(nodeId);
             const snr = snrBack[index];
             if (snr !== undefined) {
               routeParts.push(
                 ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
-                  nodeHex
+                  nodeDisplayName
                 )}(${snr}dB)</a>`
               );
             } else {
               routeParts.push(
                 ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
-                  nodeHex
+                  nodeDisplayName
                 )}</a>`
               );
             }
-          });
+          }
 
           // Добавляем источник (бывшее назначение) с иконкой и ссылкой
           const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+          const fromDisplayName = await getDeviceDisplayName(fromDevice);
           routeParts.push(
             ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
-              fromHex
+              fromDisplayName
             )}</a>`
           );
 
@@ -1170,28 +1198,31 @@ const formatDeviceStats = async (stats, redis) => {
 
           // Добавляем назначение (бывший источник) с иконкой и ссылкой
           const toDeviceIdForUrl = toDevice.toString(16).padStart(8, "0");
+          const toDisplayName = await getDeviceDisplayName(toDevice);
           routeParts.push(
             ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${toDeviceIdForUrl}">${escapeHtml(
-              toHex
+              toDisplayName
             )}</a>`
           );
 
           // Добавляем промежуточные узлы с иконками и ссылками
-          routeBack.forEach((nodeId) => {
+          for (const nodeId of routeBack) {
             const nodeHex = `!${nodeId.toString(16).padStart(8, "0")}`;
             const nodeDeviceIdForUrl = nodeId.toString(16).padStart(8, "0");
+            const nodeDisplayName = await getDeviceDisplayName(nodeId);
             routeParts.push(
               ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${nodeDeviceIdForUrl}">${escapeHtml(
-                nodeHex
+                nodeDisplayName
               )}</a>`
             );
-          });
+          }
 
           // Добавляем источник (бывшее назначение) с иконкой и ссылкой
           const fromDeviceIdForUrl = fromDevice.toString(16).padStart(8, "0");
+          const fromDisplayName = await getDeviceDisplayName(fromDevice);
           routeParts.push(
             ` <a href="https://t.me/MeshtasticTaubeteleComBot?start=${fromDeviceIdForUrl}">${escapeHtml(
-              fromHex
+              fromDisplayName
             )}</a>`
           );
 
