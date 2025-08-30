@@ -365,8 +365,9 @@ class MeshtasticRedisClient {
       if (eventType) {
         this.processEvent(server, fullTopic, user, "decoded", eventType, event);
       } else {
+        const portnumName = this.getPortnumName(decrypted.portnum);
         console.log(
-          `⚠️ Неизвестный portnum в расшифрованном: ${decrypted.portnum}`
+          `⚠️ Неизвестный portnum в расшифрованном: ${decrypted.portnum} (${portnumName})`
         );
       }
     } else {
@@ -424,6 +425,45 @@ class MeshtasticRedisClient {
       default:
         return null;
     }
+  }
+
+  /**
+   * Получает название portnum по номеру
+   */
+  getPortnumName(portnum) {
+    const portnumNames = {
+      0: "UNKNOWN_APP",
+      1: "TEXT_MESSAGE_APP",
+      2: "REMOTE_HARDWARE_APP",
+      3: "POSITION_APP",
+      4: "NODEINFO_APP",
+      5: "REPLY_APP",
+      6: "IP_TUNNEL_APP",
+      7: "TEXT_MESSAGE_COMPRESSED_APP",
+      8: "WAYPOINT_APP",
+      9: "AUDIO_APP",
+      10: "DETECTION_SENSOR_APP",
+      32: "PRIVATE_APP",
+      33: "ATAK_FORWARDER",
+      34: "PAXCOUNTER_APP",
+      35: "SERIAL_APP",
+      36: "STORE_FORWARD_APP",
+      37: "RANGE_TEST_APP",
+      64: "RANGE_TEST_APP",
+      65: "STORE_FORWARD_APP",
+      66: "ZPS_APP",
+      67: "TELEMETRY_APP",
+      68: "SIMULATOR_APP",
+      69: "TRACEROUTE_APP",
+      70: "PAXCOUNTER_APP",
+      71: "NEIGHBORINFO_APP",
+      72: "ATAK_PLUGIN",
+      73: "MAP_REPORT_APP",
+      256: "PRIVATE_APP",
+      257: "ATAK_FORWARDER",
+    };
+
+    return portnumNames[portnum] || `UNKNOWN_${portnum}`;
   }
 
   /**
@@ -490,6 +530,11 @@ class MeshtasticRedisClient {
           server: server.name,
           rawData: dataToSave,
         };
+
+        const portnumName = this.getPortnumName(event.data.portnum);
+        console.log(
+          `💾 Сохраняю ${portnumName} (${event.data.portnum}) для устройства ${event.from}`
+        );
 
         await this.redisManager.savePortnumMessage(
           event.data.portnum,
@@ -576,7 +621,11 @@ class MeshtasticRedisClient {
         }
       }
     } catch (error) {
-      console.error("Error updating dot data from portnum:", error.message);
+      const portnumName = this.getPortnumName(portnum);
+      console.error(
+        `Error updating dot data from portnum ${portnum} (${portnumName}):`,
+        error.message
+      );
     }
   }
 

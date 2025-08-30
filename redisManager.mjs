@@ -741,15 +741,8 @@ export class RedisManager {
     const cacheKey = "all_dots";
 
     if (this.isCacheValid(cacheKey)) {
-      console.log(
-        `🗺️ [CACHE HIT] Dots data served from cache for key: ${cacheKey}`
-      );
       return this.cache.get(cacheKey);
     }
-
-    console.log(
-      `🗺️ [CACHE MISS] Fetching dots data from Redis for key: ${cacheKey}`
-    );
 
     try {
       const pattern = "dots:*";
