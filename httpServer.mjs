@@ -620,12 +620,6 @@ export class HTTPServer {
       console.log(`    GET /admin                   - Admin panel`);
       console.log(`    POST /api/delete             - Delete device data`);
       console.log(`  `);
-      console.log(
-        `  📋 Доступные portnum: TEXT_MESSAGE_APP, POSITION_APP, NODEINFO_APP,`
-      );
-      console.log(
-        `     TELEMETRY_APP, NEIGHBORINFO_APP, WAYPOINT_APP, MAP_REPORT_APP, TRACEROUTE_APP`
-      );
     });
 
     return this.server;

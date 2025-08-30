@@ -1263,7 +1263,7 @@ const isAllowedTopic = (topic) => {
 
 // Select Telegram channel by topic
 const getChannelIdByTopic = (topic) => {
-  if (!topic) return botSettings.MAIN_CHANNEL_ID;
+  if (!topic) return null; // Если нет топика, возвращаем null
   if (topic.startsWith("msh/kgd/")) return botSettings.KALININGRAD_CHANNEL_ID;
   if (topic.startsWith("msh/msk/")) return botSettings.MAIN_CHANNEL_ID;
   if (topic.startsWith("msh/ufa/")) return botSettings.UFA_CHANNEL_ID;
@@ -1281,6 +1281,7 @@ const sendGroupedMessage = async (redis, messageId) => {
 
     // Get gateway info for all gateways
     const gatewayIds = gateways.map(([id]) => id);
+    console.log(`🔍 Getting gateway info for: ${gatewayIds.join(", ")}`);
     const gatewayInfoMap = await getGatewayInfoBatch(redis, gatewayIds);
 
     // Build message - try different ways to get message text
@@ -1350,7 +1351,6 @@ const sendGroupedMessage = async (redis, messageId) => {
     });
 
     await sendTelegramMessage(message, group.channelId);
-    console.log(`Telegram message sent successfully for group ${messageId}`);
   } catch (error) {
     console.error("Error sending grouped message:", error.message);
   } finally {
@@ -1363,14 +1363,13 @@ const sendTelegramMessage = async (message, channelId) => {
   if (!bot || !botSettings.ENABLE) return;
 
   try {
-    await bot.telegram.sendMessage(
-      channelId || botSettings.MAIN_CHANNEL_ID,
-      message,
-      {
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }
-    );
+    const targetChannelId = channelId || botSettings.MAIN_CHANNEL_ID;
+    console.log(`📨 Sending message to Telegram channel ${targetChannelId}`);
+    await bot.telegram.sendMessage(targetChannelId, message, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    console.log(`✅ Message sent to Telegram successfully`);
   } catch (error) {
     console.error("Error sending telegram message:", error.message);
     // Fallback: send without formatting
@@ -1497,11 +1496,16 @@ export const handleTelegramMessage = async (
   const gatewayId = event.gatewayId;
 
   if (!messageGroups.has(messageId)) {
+    const channelId = getChannelIdByTopic(fullTopic);
+    if (!channelId) {
+      console.log(`❌ No valid channel found for topic: ${fullTopic}`);
+      return;
+    }
     messageGroups.set(messageId, {
       event: event,
       gateways: new Map(),
       timeout: null,
-      channelId: getChannelIdByTopic(fullTopic),
+      channelId: channelId,
     });
   }
 
@@ -1514,13 +1518,11 @@ export const handleTelegramMessage = async (
       rxSnr: event.rxSnr,
       server: server.name,
     });
-
-    console.log(
-      `Added gateway ${gatewayId} to message group ${messageId}. Total gateways: ${group.gateways.size}`
-    );
   }
 
-  if (group.timeout) clearTimeout(group.timeout);
+  if (group.timeout) {
+    clearTimeout(group.timeout);
+  }
 
   group.timeout = setTimeout(() => {
     sendGroupedMessage(redis, messageId);

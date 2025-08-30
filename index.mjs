@@ -385,6 +385,7 @@ class MeshtasticRedisClient {
       rxRssi: meshPacket.rxRssi,
       gatewayId,
       from: meshPacket.from,
+      to: meshPacket.to, // Добавляем поле to
       id: meshPacket.id,
       data,
       packet: meshPacket,
@@ -503,6 +504,7 @@ class MeshtasticRedisClient {
         const telegramEvent = {
           id: event.id,
           from: event.from,
+          to: event.to, // Добавляем поле to
           gatewayId: event.gatewayId,
           rxRssi: event.rxRssi,
           rxSnr: event.rxSnr,
