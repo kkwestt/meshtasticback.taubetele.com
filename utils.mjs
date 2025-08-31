@@ -70,8 +70,8 @@ export const isValidPacket = (arrayBuffer) => {
   try {
     // Проверяем, что это корректная структура protobuf
     const buffer = arrayBuffer.buffer
-    ? new Uint8Array(arrayBuffer)
-    : arrayBuffer;
+      ? new Uint8Array(arrayBuffer)
+      : arrayBuffer;
 
     // Первый байт должен указывать на поле 1 (packet) и быть wire type 2 (length-delimited)
     const firstByte = buffer[0];
@@ -87,14 +87,14 @@ export const isValidPacket = (arrayBuffer) => {
 
     // Декодируем varint длину
     while (lengthPos < buffer.length && shift < 32) {
-    const byte = buffer[lengthPos];
-    length |= (byte & 0x7f) << shift;
-    lengthPos++;
+      const byte = buffer[lengthPos];
+      length |= (byte & 0x7f) << shift;
+      lengthPos++;
 
-    if ((byte & 0x80) === 0) {
-    break; // Конец varint
-    }
-    shift += 7;
+      if ((byte & 0x80) === 0) {
+        break; // Конец varint
+      }
+      shift += 7;
     }
 
     // Проверяем, что указанная длина не превышает размер буфера

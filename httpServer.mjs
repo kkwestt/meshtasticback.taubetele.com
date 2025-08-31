@@ -58,9 +58,12 @@ export class HTTPServer {
     this.app.get("/health", this.handleHealthCheck.bind(this));
     this.app.get("/stats", this.handleStatsEndpoint.bind(this));
 
-    // Dots endpoint - данные для карты
+    // Dots endpoint - данные для карты (оптимизированный)
     this.app.get("/dots", this.handleDotsEndpoint.bind(this));
     this.app.get("/dots/:deviceId", this.handleSingleDotEndpoint.bind(this));
+
+    // Endpoint для карты в минимальном формате
+    this.app.get("/map", this.handleMapEndpoint.bind(this));
 
     // Endpoint для формата portnumName:deviceId
     this.app.get(
@@ -113,7 +116,8 @@ export class HTTPServer {
 
         endpoints: {
           data: {
-            "/dots": "Map data for all devices",
+            "/dots": "Map data for all devices (optimized format)",
+            "/map": "Map data in minimal format (fastest)",
             "/dots/:deviceId": "Map data for specific device",
             "/portnum/:portnumName": "All messages by portnum type",
             "/portnum/:portnumName/:deviceId":
@@ -142,6 +146,7 @@ export class HTTPServer {
 
         examples: {
           get_all_dots: "/dots",
+          get_map_data: "/map",
           get_device_dot: "/dots/123456789",
           get_position_messages: "/portnum/POSITION_APP",
           get_device_positions: "/portnum/POSITION_APP/123456789",
@@ -269,34 +274,72 @@ export class HTTPServer {
   }
 
   /**
-   * Обрабатывает /dots endpoint - возвращает все данные для карты
+   * Обрабатывает /dots endpoint - возвращает оптимизированные данные для карты
    * @param {Request} req - Express request
    * @param {Response} res - Express response
    */
   async handleDotsEndpoint(req, res) {
     try {
       const startTime = Date.now();
-      const dots = await this.redisManager.getAllDotData();
 
-      const responseTime = Date.now() - startTime;
+      // Получаем только необходимые поля для карты
+      const dots = await this.redisManager.getOptimizedDotData();
 
-      // Добавляем заголовки кэширования
+      // Добавляем заголовки кэширования и сжатия
       res.set({
-        "Cache-Control": "public, max-age=300", // 5 минут
-        "X-Cache-Status": responseTime < 100 ? "HIT" : "MISS",
-        "X-Response-Time": `${responseTime}ms`,
+        "Cache-Control": "public, max-age=300",
+        "Content-Type": "application/json",
+        "X-Device-Count": Object.keys(dots).length,
       });
 
+      // Отправляем оптимизированные данные
       res.json({
-        timestamp: Date.now(),
-        count: Object.keys(dots).length,
         data: dots,
-        response_time_ms: responseTime,
-        cached: responseTime < 100, // Если ответ получен быстро, вероятно из кэша
-        cache_ttl_seconds: 300,
+        // timestamp: Date.now(),
+        // response_time_ms: responseTime,
+        // device_count: Object.keys(dots).length,
       });
     } catch (error) {
       handleEndpointError(error, res, "Dots endpoint");
+    }
+  }
+
+  /**
+   * Обрабатывает /map endpoint - возвращает данные для карты в минимальном формате
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleMapEndpoint(req, res) {
+    try {
+      const startTime = Date.now();
+
+      // Получаем данные для карты в минимальном формате
+      const mapData = await this.redisManager.getMapData();
+
+      const responseTime = Date.now() - startTime;
+      console.log(
+        `🗺️ Map response time: ${responseTime}ms, devices: ${
+          Object.keys(mapData).length
+        }`
+      );
+
+      // Добавляем заголовки кэширования и сжатия
+      res.set({
+        "Cache-Control": "public, max-age=300",
+        "Content-Type": "application/json",
+        "X-Response-Time": `${responseTime}ms`,
+        "X-Device-Count": Object.keys(mapData).length,
+      });
+
+      // Отправляем данные карты в минимальном формате
+      res.json({
+        data: mapData,
+        timestamp: Date.now(),
+        response_time_ms: responseTime,
+        device_count: Object.keys(mapData).length,
+      });
+    } catch (error) {
+      handleEndpointError(error, res, "Map endpoint");
     }
   }
 
@@ -608,7 +651,10 @@ export class HTTPServer {
       console.log(`📡 Available endpoints:`);
       console.log(`  ДАННЫЕ:`);
       console.log(
-        `    GET /dots                    - Map data for all devices`
+        `    GET /dots                    - Map data for all devices (optimized)`
+      );
+      console.log(
+        `    GET /map                     - Map data in minimal format (fastest)`
       );
       console.log(
         `    GET /dots/:deviceId          - Map data for specific device`

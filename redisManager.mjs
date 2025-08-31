@@ -29,11 +29,18 @@ export class RedisManager {
     this.redis = new Redis(config);
     this.cache = new Map();
     this.cacheTimestamps = new Map();
-    this.cacheTTL = 15000; // 15 секунд
+    this.cacheTTL = 30000; // Увеличиваем TTL до 30 секунд для лучшего кэширования
     this.isQuerying = false;
     this.queryLock = new Map();
 
+    // Данные карты в памяти сервера
+    this.mapDataInMemory = {};
+    this.isMapDataLoaded = false;
+
     this.setupEventHandlers();
+
+    // Предварительная загрузка кэша при запуске
+    this.preloadCache();
   }
 
   /**
@@ -433,6 +440,9 @@ export class RedisManager {
         console.log(`🗑️ Очищено ${cacheKeysToDelete.length} записей из кэша`);
       }
 
+      // Удаляем устройство из памяти сервера
+      this.removeDeviceFromMemory(numericId);
+
       return deletedCount;
     } catch (error) {
       console.error(
@@ -493,7 +503,7 @@ export class RedisManager {
         if (isMqttDevice) {
           fieldsToUpdate.mqtt = "1";
         } else {
-          // Не устанавливаем флаг mqtt для обычных устройств
+          fieldsToUpdate.mqtt = "0";
         }
       }
 
@@ -534,6 +544,9 @@ export class RedisManager {
 
       // Инвалидируем кэш
       this.invalidateDotCache(deviceId);
+
+      // Обновляем данные в памяти сервера
+      this.updateDeviceInMemory(deviceId, mergedData);
     } catch (error) {
       console.error(`Error updating dot data for ${deviceId}:`, error.message);
     }
@@ -676,6 +689,9 @@ export class RedisManager {
       // Инвалидируем кэш
       this.invalidateDotCache(deviceId);
 
+      // Обновляем данные в памяти сервера
+      this.updateDeviceInMemory(deviceId, baseData);
+
       return baseData;
     } catch (error) {
       console.error(`Error creating dot data for ${deviceId}:`, error.message);
@@ -738,19 +754,144 @@ export class RedisManager {
    * @returns {Object} - Объект с данными всех точек
    */
   async getAllDotData() {
+    // Сначала проверяем данные в памяти сервера
+    if (this.isMapDataLoaded) {
+      return this.mapDataInMemory;
+    }
+
+    // Если данные в памяти не загружены, используем кэш
     const cacheKey = "all_dots";
+    if (this.isCacheValid(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    // Если кэш недействителен, загружаем данные в память
+    await this.loadMapDataToMemory();
+    return this.mapDataInMemory;
+  }
+
+  /**
+   * Инвалидирует кэш для dot данных
+   * @param {string} deviceId - ID устройства
+   */
+  invalidateDotCache(deviceId) {
+    const cacheKey = `dot_${deviceId}`;
+    this.cache.delete(cacheKey);
+    this.cacheTimestamps.delete(cacheKey);
+
+    // Также инвалидируем кэш всех точек
+    this.cache.delete("all_dots");
+    this.cacheTimestamps.delete("all_dots");
+  }
+
+  /**
+   * Создает индекс всех устройств для быстрого доступа
+   * @returns {Promise<Array>} - Массив ID устройств
+   */
+  async createDeviceIndex() {
+    try {
+      const deviceIds = [];
+      let cursor = 0;
+      const batchSize = 100;
+
+      do {
+        const [newCursor, keys] = await this.redis.scan(
+          cursor,
+          "MATCH",
+          "dots:*",
+          "COUNT",
+          batchSize
+        );
+        cursor = newCursor;
+
+        if (keys.length > 0) {
+          // Извлекаем ID устройств из ключей
+          keys.forEach((key) => {
+            const deviceId = key.split(":")[1];
+            if (deviceId) {
+              deviceIds.push(deviceId);
+            }
+          });
+        }
+      } while (cursor !== 0);
+
+      return deviceIds;
+    } catch (error) {
+      console.error("Error creating device index:", error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Получает оптимизированные данные точек для карты (только необходимые поля)
+   */
+  async getOptimizedDotData() {
+    const cacheKey = "optimized_dots";
 
     if (this.isCacheValid(cacheKey)) {
       return this.cache.get(cacheKey);
     }
 
     try {
+      const allDots = await this.getAllDotData();
+      const optimizedDots = {};
+
+      for (const deviceId in allDots) {
+        const dotData = allDots[deviceId];
+        if (dotData) {
+          optimizedDots[deviceId] = {
+            longName: dotData.longName || "",
+            shortName: dotData.shortName || "",
+            longitude: dotData.longitude,
+            latitude: dotData.latitude,
+            s_time: dotData.s_time,
+            mqtt: dotData.mqtt || "",
+          };
+        }
+      }
+
+      this.cache.set(cacheKey, optimizedDots);
+      this.cacheTimestamps.set(cacheKey, Date.now());
+
+      return optimizedDots;
+    } catch (error) {
+      console.error("Error getting optimized dot data:", error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Отключается от Redis
+   */
+  async disconnect() {
+    try {
+      await this.redis.quit();
+      console.log("✅ Redis отключен");
+    } catch (error) {
+      console.error("Error disconnecting from Redis:", error.message);
+    }
+  }
+
+  /**
+   * Загружает данные карты в память сервера
+   */
+  async loadMapDataToMemory() {
+    try {
+      console.log("🗺️ Загружаю данные карты в память сервера...");
+
       const pattern = "dots:*";
       const keys = await this.redis.keys(pattern);
 
       if (keys.length === 0) {
-        return {};
+        this.mapDataInMemory = {};
+        this.isMapDataLoaded = true;
+        console.log("🗺️ Данные карты загружены в память: 0 устройств");
+        return;
       }
+
+      console.log(
+        `🗺️ Найдено ${keys.length} устройств в Redis, загружаю данные...`
+      );
 
       // Получаем данные для всех ключей параллельно
       const operations = keys.map((key) => ({
@@ -762,11 +903,11 @@ export class RedisManager {
 
       const allDots = {};
       keys.forEach((key, index) => {
-        const deviceId = key.split(":")[1]; // Извлекаем ID из ключа dots:1234567
+        const deviceId = key.split(":")[1];
         const data = results[index];
 
         if (data && Object.keys(data).length > 0) {
-          // Парсим данные как в getDotData
+          // Парсим данные
           const parsedData = {};
           Object.entries(data).forEach(([dataKey, value]) => {
             try {
@@ -793,47 +934,103 @@ export class RedisManager {
         }
       });
 
-      // Кэшируем результат
-      this.cache.set(cacheKey, allDots);
-      this.cacheTimestamps.set(cacheKey, Date.now());
+      // Сохраняем в память сервера
+      this.mapDataInMemory = allDots;
+      this.isMapDataLoaded = true;
 
       console.log(
-        `🗺️ [CACHE STORE] Dots data cached for key: ${cacheKey}, count: ${
+        `🗺️ Данные карты загружены в память: ${
           Object.keys(allDots).length
-        }`
+        } устройств`
       );
 
-      return allDots;
+      // Также обновляем кэш
+      this.cache.set("all_dots", allDots);
+      this.cacheTimestamps.set("all_dots", Date.now());
     } catch (error) {
-      console.error("Error getting all dot data:", error.message);
-      return {};
+      console.error("Error loading map data to memory:", error.message);
+      this.isMapDataLoaded = false;
     }
   }
 
   /**
-   * Инвалидирует кэш для dot данных
+   * Обновляет данные конкретного устройства в памяти
+   * @param {string} deviceId - ID устройства
+   * @param {Object} newData - Новые данные
+   */
+  updateDeviceInMemory(deviceId, newData) {
+    if (!this.isMapDataLoaded) {
+      return; // Данные еще не загружены
+    }
+
+    try {
+      // Создаем стандартную структуру данных
+      const standardData = this._createStandardDotData(newData, deviceId);
+
+      if (standardData) {
+        // Обновляем в памяти
+        this.mapDataInMemory[deviceId] = standardData;
+
+        // Также обновляем кэш
+        this.cache.set("all_dots", this.mapDataInMemory);
+        this.cacheTimestamps.set("all_dots", Date.now());
+      } else {
+        // Если данные невалидны, удаляем из памяти
+        if (this.mapDataInMemory[deviceId]) {
+          delete this.mapDataInMemory[deviceId];
+          console.log(`🗑️ Удалено устройство ${deviceId} из памяти сервера`);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error updating device ${deviceId} in memory:`,
+        error.message
+      );
+    }
+  }
+
+  /**
+   * Удаляет устройство из памяти
    * @param {string} deviceId - ID устройства
    */
-  invalidateDotCache(deviceId) {
-    const cacheKey = `dot_${deviceId}`;
-    this.cache.delete(cacheKey);
-    this.cacheTimestamps.delete(cacheKey);
+  removeDeviceFromMemory(deviceId) {
+    if (this.mapDataInMemory[deviceId]) {
+      delete this.mapDataInMemory[deviceId];
+      console.log(`🗑️ Удалено устройство ${deviceId} из памяти сервера`);
 
-    // Также инвалидируем кэш всех точек
-    this.cache.delete("all_dots");
-    this.cacheTimestamps.delete("all_dots");
+      // Также обновляем кэш
+      this.cache.set("all_dots", this.mapDataInMemory);
+      this.cacheTimestamps.set("all_dots", Date.now());
+    }
   }
 
   /**
-   * Отключается от Redis
+   * Получает данные карты из памяти сервера
+   * @returns {Object} - Данные карты из памяти
    */
-  async disconnect() {
-    try {
-      await this.redis.quit();
-      console.log("✅ Redis отключен");
-    } catch (error) {
-      console.error("Error disconnecting from Redis:", error.message);
+  getMapDataFromMemory() {
+    if (!this.isMapDataLoaded) {
+      console.warn("⚠️ Данные карты еще не загружены в память");
+      return {};
     }
+    return this.mapDataInMemory;
+  }
+
+  /**
+   * Предварительная загрузка кэша при запуске
+   */
+  async preloadCache() {
+    console.log("🚀 Предварительная загрузка кэша...");
+
+    // Загружаем данные карты в память сервера
+    await this.loadMapDataToMemory();
+
+    // Загружаем остальные данные
+    await this.getOptimizedDotData(); // Загружаем оптимизированные данные точек
+    await this.getPortnumStats(); // Загружаем статистику портов
+    await this.createDeviceIndex(); // Загружаем индекс устройств
+
+    console.log("✅ Предварительная загрузка кэша завершена.");
   }
 }
 
