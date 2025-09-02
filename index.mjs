@@ -21,6 +21,7 @@ import {
   getMessageType,
   isValidMessage,
   getPortnumName,
+  isValidUserName,
   CONSTANTS,
 } from "./utils.mjs";
 
@@ -588,12 +589,30 @@ class MeshtasticRedisClient {
         const shortName = decodedData.short_name || decodedData.shortName;
         const id = decodedData.id;
 
-        if (longName || shortName) {
+        // Валидируем имена перед сохранением
+        const validLongName =
+          longName && isValidUserName(longName) ? longName : "";
+        const validShortName =
+          shortName && isValidUserName(shortName) ? shortName : "";
+
+        // Логируем отклоненные имена для мониторинга
+        if (longName && !validLongName) {
+          console.log(
+            `⚠️ Отклонено некорректное длинное имя для устройства ${deviceId}: "${longName}"`
+          );
+        }
+        if (shortName && !validShortName) {
+          console.log(
+            `⚠️ Отклонено некорректное короткое имя для устройства ${deviceId}: "${shortName}"`
+          );
+        }
+
+        if (validLongName || validShortName) {
           await this.redisManager.updateDotData(
             deviceId,
             {
-              longName: longName || "",
-              shortName: shortName || "",
+              longName: validLongName,
+              shortName: validShortName,
             },
             additionalInfo
           );

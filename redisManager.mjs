@@ -3,6 +3,7 @@ import {
   executeRedisPipeline,
   createDeviceDataBatch,
   filterExpiredDevices,
+  isValidUserName,
   CONSTANTS,
   getPortnumName,
 } from "./utils.mjs";
@@ -479,17 +480,25 @@ export class RedisManager {
         fieldsToUpdate.latitude = updateData.latitude;
       }
 
-      // Если есть данные о node info - обновляем имена
+      // Если есть данные о node info - обновляем имена с валидацией
       if (
         updateData.longName !== undefined ||
         updateData.shortName !== undefined
       ) {
-        // Обновляем только те поля, которые действительно пришли
+        // Обновляем только те поля, которые действительно пришли и валидны
         if (updateData.longName !== undefined) {
-          fieldsToUpdate.longName = updateData.longName;
+          const validLongName =
+            updateData.longName && isValidUserName(updateData.longName)
+              ? updateData.longName
+              : "";
+          fieldsToUpdate.longName = validLongName;
         }
         if (updateData.shortName !== undefined) {
-          fieldsToUpdate.shortName = updateData.shortName;
+          const validShortName =
+            updateData.shortName && isValidUserName(updateData.shortName)
+              ? updateData.shortName
+              : "";
+          fieldsToUpdate.shortName = validShortName;
         }
       }
 
@@ -625,14 +634,16 @@ export class RedisManager {
       filteredData.longitude !== 0 &&
       filteredData.latitude !== 0;
 
-    // ИСПРАВЛЕНО: правильная проверка имен
+    // ИСПРАВЛЕНО: правильная проверка имен с валидацией
     const hasName =
       (filteredData.longName &&
         typeof filteredData.longName === "string" &&
-        filteredData.longName.trim() !== "") ||
+        filteredData.longName.trim() !== "" &&
+        isValidUserName(filteredData.longName)) ||
       (filteredData.shortName &&
         typeof filteredData.shortName === "string" &&
-        filteredData.shortName.trim() !== "");
+        filteredData.shortName.trim() !== "" &&
+        isValidUserName(filteredData.shortName));
 
     // Устройство валидно, если есть либо геолокация, либо имя
     const hasValidData = hasLocation || hasName;

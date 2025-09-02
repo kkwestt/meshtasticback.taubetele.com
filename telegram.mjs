@@ -191,47 +191,6 @@ const escapeHtml = (text) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;");
 
-// Clean and fix text encoding issues
-export const cleanText = (text) => {
-  if (!text || typeof text !== "string") return text;
-
-  try {
-    // Remove null bytes and control characters
-    let cleaned = text.replace(/\0/g, "").replace(/[\x00-\x1F\x7F-\x9F]/g, "");
-
-    // Try to fix common encoding issues
-    // If the text contains garbled characters, try to decode it properly
-    if (cleaned.includes("") || /[\x80-\xFF]/.test(cleaned)) {
-      // Try to fix UTF-8 encoding issues
-      try {
-        // Convert to bytes and back to UTF-8
-        const bytes = new Uint8Array(cleaned.length);
-        for (let i = 0; i < cleaned.length; i++) {
-          bytes[i] = cleaned.charCodeAt(i);
-        }
-        const decoder = new TextDecoder("utf-8", { fatal: false });
-        cleaned = decoder.decode(bytes);
-      } catch (e) {
-        // If that fails, just remove problematic characters
-        cleaned = cleaned.replace(/[^\x20-\x7E\u0400-\u04FF]/g, "");
-      }
-    }
-
-    // Remove extra whitespace and trim
-    cleaned = cleaned.replace(/\s+/g, " ").trim();
-
-    // If the result is empty or just special characters, return original
-    if (!cleaned || cleaned.length < 2) {
-      return text;
-    }
-
-    return cleaned;
-  } catch (error) {
-    console.error("Error cleaning text:", error.message);
-    return text;
-  }
-};
-
 const formatTimeAgo = (timestamp) => {
   if (
     !timestamp ||
@@ -347,12 +306,10 @@ const getGatewayInfoBatch = async (redis, gatewayIds) => {
         );
 
         if (userData && userData[0]) {
-          const longName = cleanText(
-            userData[0].rawData?.longName || userData[0].rawData?.long_name
-          );
-          const shortName = cleanText(
-            userData[0].rawData?.shortName || userData[0].rawData?.short_name
-          );
+          const longName =
+            userData[0].rawData?.longName || userData[0].rawData?.long_name;
+          const shortName =
+            userData[0].rawData?.shortName || userData[0].rawData?.short_name;
 
           gatewayInfoMap[gatewayId] = {
             idHex: gatewayId,
@@ -527,20 +484,18 @@ const formatDeviceStats = async (stats, redis) => {
   let message = `📊 <b>Статистика устройства ${escapeHtml(deviceId)}</b>\n\n`;
 
   // NodeInfo section - support both camelCase and snake_case
-  const longName = cleanText(
+  const longName =
     user?.data?.longName ||
-      user?.data?.long_name ||
-      userData?.longName ||
-      userData?.long_name ||
-      "Unknown"
-  );
-  const shortName = cleanText(
+    user?.data?.long_name ||
+    userData?.longName ||
+    userData?.long_name ||
+    "Unknown";
+  const shortName =
     user?.data?.shortName ||
-      user?.data?.short_name ||
-      userData?.shortName ||
-      userData?.short_name ||
-      "N/A"
-  );
+    user?.data?.short_name ||
+    userData?.shortName ||
+    userData?.short_name ||
+    "N/A";
   const hwModel =
     user?.data?.hwModel ||
     user?.data?.hw_model ||
@@ -903,10 +858,8 @@ const formatDeviceStats = async (stats, redis) => {
       // Support both camelCase and snake_case field names
       // Map Report данные могут быть в decoded или напрямую
       const decodedData = mapData.decoded || mapData;
-      const longName = cleanText(decodedData.longName || decodedData.long_name);
-      const shortName = cleanText(
-        decodedData.shortName || decodedData.short_name
-      );
+      const longName = decodedData.longName || decodedData.long_name;
+      const shortName = decodedData.shortName || decodedData.short_name;
       const role = decodedData.role;
       const hwModel = decodedData.hwModel || decodedData.hw_model;
       const firmwareVersion =
@@ -1008,7 +961,7 @@ const formatDeviceStats = async (stats, redis) => {
           const deviceHex = `!${deviceId.toString(16).padStart(8, "0")}`;
           const deviceInfo = await getGatewayInfoBatch(redis, [deviceHex]);
           const info = deviceInfo[deviceHex];
-          return cleanText(info?.longName) || deviceHex;
+          return info?.longName || deviceHex;
         } catch (error) {
           return `!${deviceId.toString(16).padStart(8, "0")}`;
         }
@@ -1396,7 +1349,7 @@ const sendGroupedMessage = async (redis, messageId) => {
     if (senderInfo) {
       const deviceIdForUrl = senderId ? senderId.substring(1) : "";
       message += `\n👤 <b>От:</b> ${escapeHtml(
-        cleanText(senderInfo.longName)
+        senderInfo.longName
       )} (${escapeHtml(
         senderId
       )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
@@ -1411,9 +1364,9 @@ const sendGroupedMessage = async (redis, messageId) => {
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
       const gatewayIdForUrl = gatewayId ? gatewayId.substring(1) : "";
-      message += `• ${escapeHtml(
-        cleanText(gateway?.longName) || "Unknown"
-      )} (${escapeHtml(gatewayId)})`;
+      message += `• ${escapeHtml(gateway?.longName || "Unknown")} (${escapeHtml(
+        gatewayId
+      )})`;
 
       // Check if RSSI or SNR is 0, then show MQTT instead of values
       if (info.rxRssi === 0 || info.rxSnr === 0) {

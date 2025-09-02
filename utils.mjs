@@ -337,3 +337,57 @@ export const filterExpiredDevices = (devices, expiryTime) => {
     return now - new Date(device.timestamp).getTime() < expiryTime;
   });
 };
+
+/**
+ * Валидирует имя пользователя на корректность
+ * @param {string} name - Имя для валидации
+ * @returns {boolean} - Валидность имени
+ */
+export const isValidUserName = (name) => {
+  if (!name || typeof name !== "string") {
+    return false;
+  }
+
+  const trimmedName = name.trim();
+
+  // Проверяем, что имя не пустое после обрезки
+  if (trimmedName.length === 0) {
+    return false;
+  }
+
+  // Проверяем длину имени (не должно быть слишком длинным)
+  if (trimmedName.length > 50) {
+    return false;
+  }
+
+  // Проверяем на наличие некорректных символов
+  // Разрешаем: буквы (включая кириллицу), цифры, пробелы, дефисы, подчеркивания, точки
+  const validNameRegex = /^[a-zA-Zа-яА-ЯёЁ0-9\s\-_\.]+$/;
+
+  if (!validNameRegex.test(trimmedName)) {
+    return false;
+  }
+
+  // Проверяем, что имя не состоит только из специальных символов
+  const hasValidChars = /[a-zA-Zа-яА-ЯёЁ0-9]/.test(trimmedName);
+  if (!hasValidChars) {
+    return false;
+  }
+
+  // Проверяем на подозрительные паттерны (много специальных символов подряд)
+  const suspiciousPatterns = [
+    /[{}|`~]{2,}/, // Много фигурных скобок, пайпов, бэктиков, тильд подряд
+    /[!@#$%^&*()+=]{3,}/, // Много специальных символов подряд
+    /[<>]{2,}/, // Много угловых скобок подряд
+    /[\\/]{3,}/, // Много слешей подряд
+    /[\[\]]{2,}/, // Много квадратных скобок подряд
+  ];
+
+  for (const pattern of suspiciousPatterns) {
+    if (pattern.test(trimmedName)) {
+      return false;
+    }
+  }
+
+  return true;
+};
