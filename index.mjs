@@ -366,10 +366,10 @@ class MeshtasticRedisClient {
       if (eventType) {
         this.processEvent(server, fullTopic, user, "decoded", eventType, event);
       } else {
-        const portnumName = this.getPortnumName(decrypted.portnum);
-        console.log(
-          `⚠️ Неизвестный portnum в расшифрованном: ${decrypted.portnum} (${portnumName})`
-        );
+        // const portnumName = this.getPortnumName(decrypted.portnum);
+        // console.log(
+        //   `⚠️ Неизвестный portnum в расшифрованном: ${decrypted.portnum} (${portnumName})`
+        // );
       }
     } else {
       // Не удалось расшифровать пакет

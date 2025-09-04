@@ -361,15 +361,15 @@ export const isValidUserName = (name) => {
   }
 
   // Проверяем на наличие некорректных символов
-  // Разрешаем: буквы (включая кириллицу), цифры, пробелы, дефисы, подчеркивания, точки
-  const validNameRegex = /^[a-zA-Zа-яА-ЯёЁ0-9\s\-_\.]+$/;
+  // Разрешаем: буквы (включая кириллицу), цифры, пробелы, дефисы, подчеркивания, точки, эмоджи
+  const validNameRegex = /^[a-zA-Zа-яА-ЯёЁ0-9\s\-_\.\p{Emoji}]+$/u;
 
   if (!validNameRegex.test(trimmedName)) {
     return false;
   }
 
   // Проверяем, что имя не состоит только из специальных символов
-  const hasValidChars = /[a-zA-Zа-яА-ЯёЁ0-9]/.test(trimmedName);
+  const hasValidChars = /[a-zA-Zа-яА-ЯёЁ0-9\p{Emoji}]/u.test(trimmedName);
   if (!hasValidChars) {
     return false;
   }
