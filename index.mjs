@@ -47,6 +47,44 @@ class MeshtasticRedisClient {
       errorsCount: 0,
       startTime: Date.now(),
     };
+
+    // Запускаем мониторинг производительности
+    this.startPerformanceMonitoring();
+  }
+
+  /**
+   * Запускает мониторинг производительности
+   */
+  startPerformanceMonitoring() {
+    setInterval(() => {
+      const memUsage = process.memoryUsage();
+      const uptime = Date.now() - this.stats.startTime;
+      const errorRate =
+        (this.stats.errorsCount / (this.stats.messagesProcessed || 1)) * 100;
+
+      console.log(
+        `📊 Статистика: сообщений=${this.stats.messagesProcessed}, ошибок=${
+          this.stats.errorsCount
+        } (${errorRate.toFixed(2)}%), память=${Math.round(
+          memUsage.heapUsed / 1024 / 1024
+        )}MB, время=${Math.round(uptime / 1000)}с`
+      );
+
+      // Предупреждение о высоком потреблении памяти
+      if (memUsage.heapUsed > 500 * 1024 * 1024) {
+        // 500MB
+        console.log(
+          `⚠️ Высокое потребление памяти: ${Math.round(
+            memUsage.heapUsed / 1024 / 1024
+          )}MB`
+        );
+      }
+
+      // Предупреждение о высокой частоте ошибок
+      if (errorRate > 10) {
+        console.log(`⚠️ Высокая частота ошибок: ${errorRate.toFixed(2)}%`);
+      }
+    }, 30000); // Каждые 30 секунд
   }
 
   /**
@@ -188,13 +226,20 @@ class MeshtasticRedisClient {
     try {
       this.stats.messagesProcessed++;
 
+      // Краткое логирование для мониторинга
+      if (this.stats.messagesProcessed % 1000 === 0) {
+        console.log(
+          `📊 Обработано сообщений: ${this.stats.messagesProcessed}, ошибок: ${this.stats.errorsCount}`
+        );
+      }
+
       // console.log("=".repeat(50));
       // console.log(`📨 [${server.name}] Получено сообщение на топик: ${topic}`);
 
       // Парсим топик
       const topicParts = topic.split("/");
       if (topicParts.length < 3) {
-        console.log(`⚠️ Неверный формат топика: ${topic}`);
+        console.log(`⚠️ [${server.name}] Неверный формат топика: ${topic}`);
         return;
       }
 
@@ -233,6 +278,17 @@ class MeshtasticRedisClient {
         `❌ [${server.name}] Ошибка обработки сообщения:`,
         error.message
       );
+
+      // Критическая ошибка - может привести к перезапуску
+      if (
+        error.message.includes("out of memory") ||
+        error.message.includes("Maximum call stack")
+      ) {
+        console.error(`🚨 КРИТИЧЕСКАЯ ОШИБКА: ${error.message}`);
+        console.error(
+          `📊 Состояние: сообщений=${this.stats.messagesProcessed}, ошибок=${this.stats.errorsCount}`
+        );
+      }
     }
   }
 
@@ -259,16 +315,27 @@ class MeshtasticRedisClient {
     try {
       // console.log(`🔍 Декодируем ServiceEnvelope...`);
 
+      // Логирование больших пакетов
+      if (arrayBuffer.length > 100000) {
+        console.log(
+          `⚠️ [${server.name}] Большой пакет: ${arrayBuffer.length} байт, пользователь: ${user}`
+        );
+      }
+
       // Валидация пакета
       if (!isValidPacket(arrayBuffer)) {
-        // console.log(`❌ Пакет НЕ валидный`);
+        console.log(
+          `⚠️ [${server.name}] Невалидный пакет от ${user}, размер: ${arrayBuffer.length}`
+        );
         return;
       }
 
       // Дополнительная проверка размера перед декодированием
       if (arrayBuffer.length > 1048576) {
         // 1MB лимит
-        console.log(`❌ Пакет слишком большой: ${arrayBuffer.length} байт`);
+        console.log(
+          `❌ [${server.name}] Пакет слишком большой: ${arrayBuffer.length} байт от ${user}`
+        );
         return;
       }
 
@@ -474,7 +541,13 @@ class MeshtasticRedisClient {
     try {
       const { from } = event;
       if (!from) {
+        console.log(`⚠️ [${server.name}] Событие без from: ${eventType}`);
         return;
+      }
+
+      // Логирование критических событий
+      if (eventType === "user" && event.data?.portnum === 4) {
+        console.log(`👤 [${server.name}] Обновление пользователя ${from}`);
       }
 
       // Обновляем время последней активности для карты
@@ -534,6 +607,9 @@ class MeshtasticRedisClient {
 
         const portnumName = this.getPortnumName(event.data.portnum);
 
+        console.log(
+          `💾 [${server.name}] Сохранение portnum ${event.data.portnum} для устройства ${event.from}`
+        );
         await this.redisManager.savePortnumMessage(
           event.data.portnum,
           event.from,
@@ -582,6 +658,11 @@ class MeshtasticRedisClient {
     additionalInfo = null
   ) {
     try {
+      // Логирование обновлений данных
+      console.log(
+        `🔄 Обновление данных устройства ${deviceId}, portnum: ${portnum}`
+      );
+
       // Обрабатываем разные типы сообщений для обновления dots данных
       if (portnum === 4 || portnum === "NODEINFO_APP") {
         // Данные пользователя
@@ -596,18 +677,23 @@ class MeshtasticRedisClient {
           shortName && isValidUserName(shortName) ? shortName : "";
 
         // Логируем отклоненные имена для мониторинга
-        if (longName && !validLongName) {
-          console.log(
-            `⚠️ Отклонено некорректное длинное имя для устройства ${deviceId}: "${longName}"`
-          );
-        }
-        if (shortName && !validShortName) {
-          console.log(
-            `⚠️ Отклонено некорректное короткое имя для устройства ${deviceId}: "${shortName}"`
-          );
-        }
+        // if (longName && !validLongName) {
+        //   console.log(
+        //     `⚠️ Отклонено некорректное длинное имя для устройства ${deviceId}: "${longName}"`
+        //   );
+        // }
+        // if (shortName && !validShortName) {
+        //   console.log(
+        //     `⚠️ Отклонено некорректное короткое имя для устройства ${deviceId}: "${shortName}"`
+        //   );
+        // }
 
         if (validLongName || validShortName) {
+          console.log(
+            `👤 Обновление пользователя ${deviceId}: ${
+              validLongName || "N/A"
+            } / ${validShortName || "N/A"}`
+          );
           await this.redisManager.updateDotData(
             deviceId,
             {
@@ -626,6 +712,9 @@ class MeshtasticRedisClient {
           const latitude = latitudeI / 1e7;
           const longitude = longitudeI / 1e7;
 
+          console.log(
+            `📍 Обновление позиции ${deviceId}: ${latitude}, ${longitude}`
+          );
           await this.redisManager.updateDotData(
             deviceId,
             {
@@ -717,11 +806,19 @@ class MeshtasticRedisClient {
   decrypt(packet) {
     // Проверяем валидность входных данных
     if (!packet?.encrypted || !packet.id || !packet.from) {
+      console.log(
+        `⚠️ Неполные данные для расшифровки: encrypted=${!!packet?.encrypted}, id=${
+          packet?.id
+        }, from=${packet?.from}`
+      );
       return null;
     }
 
     // Проверяем размер зашифрованных данных
     if (packet.encrypted.length === 0 || packet.encrypted.length > 65536) {
+      console.log(
+        `⚠️ Некорректный размер зашифрованных данных: ${packet.encrypted.length} байт`
+      );
       return null;
     }
 
@@ -762,27 +859,6 @@ class MeshtasticRedisClient {
     }
 
     return null;
-  }
-
-  /**
-   * Возвращает статистику приложения
-   */
-  getStats() {
-    const uptime = Date.now() - this.stats.startTime;
-    const mqttStats = this.mqttManager.getConnectionStats();
-    const cacheStats = this.redisManager.getCacheStats();
-
-    return {
-      uptime,
-      messages: {
-        processed: this.stats.messagesProcessed,
-        errors: this.stats.errorsCount,
-        rate: this.stats.messagesProcessed / (uptime / 1000), // сообщений в секунду
-      },
-      mqtt: mqttStats,
-      cache: cacheStats,
-      memory: process.memoryUsage(),
-    };
   }
 
   /**
@@ -832,13 +908,35 @@ async function main() {
   process.on("SIGINT", () => gracefulShutdown("SIGINT"));
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
+  // Обработка необработанных исключений
+  process.on("uncaughtException", (error) => {
+    console.error("🚨 НЕОБРАБОТАННОЕ ИСКЛЮЧЕНИЕ:", error);
+    console.error("📊 Stack trace:", error.stack);
+    console.error("⏰ Время:", new Date().toISOString());
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("🚨 НЕОБРАБОТАННОЕ ОТКЛОНЕНИЕ PROMISE:", reason);
+    console.error("📊 Promise:", promise);
+    console.error("⏰ Время:", new Date().toISOString());
+  });
+
   // Запускаем клиент
   await client.init();
 }
 
 // Запускаем только если файл запущен напрямую
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
+  main().catch((error) => {
+    console.error("❌ Критическая ошибка в main():");
+    console.error("  📍 Местоположение: main()");
+    console.error("  🔍 Тип ошибки:", error.constructor.name);
+    console.error("  💬 Сообщение:", error.message);
+    console.error("  📊 Stack trace:", error.stack);
+    console.error("  ⏰ Время:", new Date().toISOString());
+    process.exit(1);
+  });
 }
 
 export default MeshtasticRedisClient;
