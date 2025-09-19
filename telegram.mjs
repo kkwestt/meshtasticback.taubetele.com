@@ -1,7 +1,7 @@
 import { Telegraf } from "telegraf";
 import { botSettings } from "./config.mjs";
 
-const MESSAGE_GROUP_TIMEOUT = 8000;
+const MESSAGE_GROUP_TIMEOUT = 10 * 1000;
 
 // Helper function to format hop count
 const formatHopCount = (hop) => {
