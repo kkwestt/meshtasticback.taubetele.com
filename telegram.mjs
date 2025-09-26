@@ -30,7 +30,10 @@ const messageGroups = new Map();
 const processedMessages = new Set();
 
 // Cleanup processed messages every 10 minutes
-setInterval(() => processedMessages.clear(), 10 * 60 * 1000);
+let messageCleanupInterval = setInterval(
+  () => processedMessages.clear(),
+  10 * 60 * 1000
+);
 
 // Hardware models map
 const HW_MODELS = {
@@ -1559,6 +1562,22 @@ export const handleTelegramMessage = async (
     sendGroupedMessage(redis, messageId);
   }, MESSAGE_GROUP_TIMEOUT);
 };
+
+/**
+ * Очищает интервалы и ресурсы Telegram модуля
+ */
+export function cleanupTelegramResources() {
+  if (messageCleanupInterval) {
+    clearInterval(messageCleanupInterval);
+    console.log("✅ Интервал очистки сообщений Telegram остановлен");
+  }
+
+  // Очищаем Maps
+  messageGroups.clear();
+  processedMessages.clear();
+
+  console.log("✅ Ресурсы Telegram модуля очищены");
+}
 
 // Экспортируем функции для тестирования
 export { getDeviceStats, getGatewayInfoBatch, toNumericId, formatDeviceStats };

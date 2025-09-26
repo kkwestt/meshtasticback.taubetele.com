@@ -31,12 +31,14 @@ export class RedisManager {
     this.cache = new Map();
     this.cacheTimestamps = new Map();
     this.cacheTTL = 30000; // Увеличиваем TTL до 30 секунд для лучшего кэширования
+    this.maxCacheSize = 5000; // Максимальное количество записей в кэше
     this.isQuerying = false;
     this.queryLock = new Map();
 
     // Данные карты в памяти сервера
     this.mapDataInMemory = {};
     this.isMapDataLoaded = false;
+    this.maxMapDataSize = 10000; // Максимальное количество устройств в памяти
 
     this.setupEventHandlers();
 
@@ -319,25 +321,85 @@ export class RedisManager {
    * Периодически очищает истекший кэш
    */
   startCacheCleanup() {
-    setInterval(() => {
-      const now = Date.now();
+    this.cacheCleanupInterval = setInterval(() => {
+      this.cleanupExpiredCache();
+      this.enforceCacheSize();
+      this.enforceMapDataSize();
+    }, 60000); // Каждую минуту
+  }
+
+  /**
+   * Очищает истекшие записи кэша
+   */
+  cleanupExpiredCache() {
+    const now = Date.now();
+    const keysToDelete = [];
+
+    this.cacheTimestamps.forEach((timestamp, key) => {
+      if (now - timestamp >= this.cacheTTL) {
+        keysToDelete.push(key);
+      }
+    });
+
+    keysToDelete.forEach((key) => {
+      this.cache.delete(key);
+      this.cacheTimestamps.delete(key);
+    });
+
+    if (keysToDelete.length > 0) {
+      console.log(`🗑️ Очищено ${keysToDelete.length} истекших записей кэша`);
+    }
+  }
+
+  /**
+   * Принудительно ограничивает размер кэша
+   */
+  enforceCacheSize() {
+    if (this.cache.size > this.maxCacheSize) {
+      const excessCount = this.cache.size - this.maxCacheSize;
       const keysToDelete = [];
 
-      this.cacheTimestamps.forEach((timestamp, key) => {
-        if (now - timestamp >= this.cacheTTL) {
-          keysToDelete.push(key);
-        }
-      });
+      // Удаляем самые старые записи
+      for (const [key, timestamp] of this.cacheTimestamps.entries()) {
+        keysToDelete.push({ key, timestamp });
+      }
 
-      keysToDelete.forEach((key) => {
+      // Сортируем по времени и удаляем самые старые
+      keysToDelete.sort((a, b) => a.timestamp - b.timestamp);
+      const toRemove = keysToDelete.slice(0, excessCount);
+
+      toRemove.forEach(({ key }) => {
         this.cache.delete(key);
         this.cacheTimestamps.delete(key);
       });
 
-      if (keysToDelete.length > 0) {
-        console.log(`🗑️ Очищено ${keysToDelete.length} истекших записей кэша`);
-      }
-    }, 60000); // Каждую минуту
+      console.log(
+        `⚠️ Принудительно очищено ${excessCount} записей кэша (превышен лимит ${this.maxCacheSize})`
+      );
+    }
+  }
+
+  /**
+   * Принудительно ограничивает размер данных карты в памяти
+   */
+  enforceMapDataSize() {
+    const deviceCount = Object.keys(this.mapDataInMemory).length;
+    if (deviceCount > this.maxMapDataSize) {
+      const excessCount = deviceCount - this.maxMapDataSize;
+      const devices = Object.entries(this.mapDataInMemory);
+
+      // Сортируем по времени активности и удаляем самые старые
+      devices.sort((a, b) => (a[1].s_time || 0) - (b[1].s_time || 0));
+      const toRemove = devices.slice(0, excessCount);
+
+      toRemove.forEach(([deviceId]) => {
+        delete this.mapDataInMemory[deviceId];
+      });
+
+      console.log(
+        `⚠️ Принудительно удалено ${excessCount} устройств из памяти (превышен лимит ${this.maxMapDataSize})`
+      );
+    }
   }
 
   /**
@@ -876,6 +938,17 @@ export class RedisManager {
    */
   async disconnect() {
     try {
+      // Очищаем интервал очистки кэша
+      if (this.cacheCleanupInterval) {
+        clearInterval(this.cacheCleanupInterval);
+        console.log("✅ Интервал очистки кэша остановлен");
+      }
+
+      // Очищаем все кэши
+      this.clearCache();
+      this.mapDataInMemory = {};
+      this.isMapDataLoaded = false;
+
       await this.redis.quit();
       console.log("✅ Redis отключен");
     } catch (error) {

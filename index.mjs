@@ -8,7 +8,11 @@ import { servers, redisConfig, serverConfig } from "./config.mjs";
 import { MQTTManager } from "./mqtt.mjs";
 import { RedisManager } from "./redisManager.mjs";
 import { HTTPServer } from "./httpServer.mjs";
-import { handleTelegramMessage, initializeTelegramBot } from "./telegram.mjs";
+import {
+  handleTelegramMessage,
+  initializeTelegramBot,
+  cleanupTelegramResources,
+} from "./telegram.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
 import {
   shouldLogError,
@@ -56,7 +60,7 @@ class MeshtasticRedisClient {
    * Запускает мониторинг производительности
    */
   startPerformanceMonitoring() {
-    setInterval(() => {
+    this.performanceInterval = setInterval(() => {
       const memUsage = process.memoryUsage();
       const uptime = Date.now() - this.stats.startTime;
       const errorRate =
@@ -70,8 +74,32 @@ class MeshtasticRedisClient {
         )}MB, время=${Math.round(uptime / 1000)}с`
       );
 
-      // Предупреждение о высоком потреблении памяти
-      if (memUsage.heapUsed > 500 * 1024 * 1024) {
+      // Принудительная сборка мусора при высоком потреблении памяти
+      if (memUsage.heapUsed > 700 * 1024 * 1024) {
+        // 700MB
+        console.log(
+          `⚠️ КРИТИЧЕСКОЕ потребление памяти: ${Math.round(
+            memUsage.heapUsed / 1024 / 1024
+          )}MB - запуск сборки мусора`
+        );
+
+        // Принудительная сборка мусора
+        if (global.gc) {
+          global.gc();
+          const newMemUsage = process.memoryUsage();
+          console.log(
+            `🗑️ Сборка мусора завершена. Память: ${Math.round(
+              newMemUsage.heapUsed / 1024 / 1024
+            )}MB (освобождено ${Math.round(
+              (memUsage.heapUsed - newMemUsage.heapUsed) / 1024 / 1024
+            )}MB)`
+          );
+        } else {
+          console.log(
+            `⚠️ Сборка мусора недоступна. Перезапустите с флагом --expose-gc`
+          );
+        }
+      } else if (memUsage.heapUsed > 500 * 1024 * 1024) {
         // 500MB
         console.log(
           `⚠️ Высокое потребление памяти: ${Math.round(
@@ -868,6 +896,12 @@ class MeshtasticRedisClient {
     console.log("👋 Отключение от всех сервисов...");
 
     try {
+      // Очищаем интервалы
+      if (this.performanceInterval) {
+        clearInterval(this.performanceInterval);
+        console.log("✅ Интервал мониторинга производительности остановлен");
+      }
+
       // Отключаем MQTT
       await this.mqttManager.disconnect();
 
@@ -879,6 +913,21 @@ class MeshtasticRedisClient {
       // Отключаем Redis
       if (this.redisManager) {
         await this.redisManager.disconnect();
+      }
+
+      // Очищаем ресурсы Telegram
+      cleanupTelegramResources();
+
+      // Очищаем кэши
+      if (this.redisManager) {
+        this.redisManager.clearCache();
+        console.log("✅ Кэши очищены");
+      }
+
+      // Принудительная сборка мусора при отключении
+      if (global.gc) {
+        global.gc();
+        console.log("✅ Выполнена сборка мусора");
       }
     } catch (error) {
       console.error("Ошибка при отключении:", error);
