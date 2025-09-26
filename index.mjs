@@ -573,11 +573,6 @@ class MeshtasticRedisClient {
         return;
       }
 
-      // Логирование критических событий
-      if (eventType === "user" && event.data?.portnum === 4) {
-        console.log(`👤 [${server.name}] Обновление пользователя ${from}`);
-      }
-
       // Обновляем время последней активности для карты
       await this.updateDotActivityTime(from, event, server);
 
@@ -635,9 +630,6 @@ class MeshtasticRedisClient {
 
         const portnumName = this.getPortnumName(event.data.portnum);
 
-        console.log(
-          `💾 [${server.name}] Сохранение portnum ${event.data.portnum} для устройства ${event.from}`
-        );
         await this.redisManager.savePortnumMessage(
           event.data.portnum,
           event.from,
@@ -686,11 +678,6 @@ class MeshtasticRedisClient {
     additionalInfo = null
   ) {
     try {
-      // Логирование обновлений данных
-      console.log(
-        `🔄 Обновление данных устройства ${deviceId}, portnum: ${portnum}`
-      );
-
       // Обрабатываем разные типы сообщений для обновления dots данных
       if (portnum === 4 || portnum === "NODEINFO_APP") {
         // Данные пользователя
@@ -717,11 +704,6 @@ class MeshtasticRedisClient {
         // }
 
         if (validLongName || validShortName) {
-          console.log(
-            `👤 Обновление пользователя ${deviceId}: ${
-              validLongName || "N/A"
-            } / ${validShortName || "N/A"}`
-          );
           await this.redisManager.updateDotData(
             deviceId,
             {
@@ -740,9 +722,6 @@ class MeshtasticRedisClient {
           const latitude = latitudeI / 1e7;
           const longitude = longitudeI / 1e7;
 
-          console.log(
-            `📍 Обновление позиции ${deviceId}: ${latitude}, ${longitude}`
-          );
           await this.redisManager.updateDotData(
             deviceId,
             {

@@ -17,7 +17,6 @@ services:
     # Ограничиваем ресурсы контейнера
     mem_limit: 1.5g
     mem_reservation: 512m
-    cpus: "1.0"
     volumes:
       - ./logs:/app/logs
       - ./config.mjs:/app/config.mjs:ro
