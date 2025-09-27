@@ -12,6 +12,7 @@ import {
   handleTelegramMessage,
   initializeTelegramBot,
   cleanupTelegramResources,
+  sendPersonalMessage,
 } from "./telegram.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
 import {
@@ -952,6 +953,19 @@ async function main() {
 
   // Запускаем клиент
   await client.init();
+  
+  // Отправляем сообщение о запуске сервера пользователю @kontau
+  try {
+    const startupMessage = `🚀 <b>Meshtastic сервер запущен!</b>\n\n` +
+      `⏰ Время запуска: ${new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}\n` +
+      `📡 Подключенных серверов: ${servers.length}\n` +
+      `🔧 Версия: 2.0.0\n` +
+      `✅ Все сервисы работают нормально`;
+    
+    await sendPersonalMessage('kontau', startupMessage);
+  } catch (error) {
+    console.error('❌ Ошибка отправки сообщения о запуске:', error.message);
+  }
 }
 
 // Запускаем только если файл запущен напрямую

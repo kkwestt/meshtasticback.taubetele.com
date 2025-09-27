@@ -1422,6 +1422,46 @@ const sendTelegramMessage = async (message, channelId) => {
   }
 };
 
+// Send personal message to a user by username
+const sendPersonalMessage = async (username, message) => {
+  if (!bot || !botSettings.ENABLE) return false;
+
+  try {
+    console.log(`📨 Sending personal message to user @${username}`);
+    await bot.telegram.sendMessage(`@${username}`, message, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    console.log(`✅ Personal message sent to @${username} successfully`);
+    return true;
+  } catch (error) {
+    console.error(
+      `Error sending personal message to @${username}:`,
+      error.message
+    );
+    // Fallback: send without formatting
+    try {
+      await bot.telegram.sendMessage(
+        `@${username}`,
+        message.replace(/<[^>]*>/g, ""),
+        {
+          disable_web_page_preview: true,
+        }
+      );
+      console.log(
+        `✅ Personal message sent to @${username} (fallback) successfully`
+      );
+      return true;
+    } catch (fallbackError) {
+      console.error(
+        `Error sending fallback personal message to @${username}:`,
+        fallbackError.message
+      );
+      return false;
+    }
+  }
+};
+
 // Safe reply function
 const safeReply = async (ctx, message) => {
   try {
@@ -1580,4 +1620,10 @@ export function cleanupTelegramResources() {
 }
 
 // Экспортируем функции для тестирования
-export { getDeviceStats, getGatewayInfoBatch, toNumericId, formatDeviceStats };
+export {
+  getDeviceStats,
+  getGatewayInfoBatch,
+  toNumericId,
+  formatDeviceStats,
+  sendPersonalMessage,
+};
