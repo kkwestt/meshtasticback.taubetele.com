@@ -960,9 +960,7 @@ async function main() {
       `🚀 <b>Meshtastic сервер запущен!</b>\n\n` +
       `⏰ Время запуска: ${new Date().toLocaleString("ru-RU", {
         timeZone: "Europe/Moscow",
-      })}\n` +
-      `📡 Подключенных серверов: ${servers.length}\n` +
-      `✅ Все сервисы работают нормально`;
+      })}\n`;
 
     await sendPersonalMessage(14259, startupMessage);
   } catch (error) {
