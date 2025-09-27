@@ -954,7 +954,7 @@ async function main() {
   // Запускаем клиент
   await client.init();
 
-  // Отправляем сообщение о запуске сервера пользователю @kontau
+  // Отправляем сообщение о запуске сервера пользователю с ID 14259
   try {
     const startupMessage =
       `🚀 <b>Meshtastic сервер запущен!</b>\n\n` +
@@ -962,10 +962,9 @@ async function main() {
         timeZone: "Europe/Moscow",
       })}\n` +
       `📡 Подключенных серверов: ${servers.length}\n` +
-      `🔧 Версия: 2.0.0\n` +
       `✅ Все сервисы работают нормально`;
 
-    await sendPersonalMessage("kontau", startupMessage);
+    await sendPersonalMessage(14259, startupMessage);
   } catch (error) {
     console.error("❌ Ошибка отправки сообщения о запуске:", error.message);
   }

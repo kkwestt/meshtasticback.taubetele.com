@@ -1422,39 +1422,35 @@ const sendTelegramMessage = async (message, channelId) => {
   }
 };
 
-// Send personal message to a user by username
-const sendPersonalMessage = async (username, message) => {
+// Send personal message to a user by ID
+const sendPersonalMessage = async (userId, message) => {
   if (!bot || !botSettings.ENABLE) return false;
 
   try {
-    console.log(`📨 Sending personal message to user @${username}`);
-    await bot.telegram.sendMessage(`@${username}`, message, {
+    console.log(`📨 Sending personal message to user ID ${userId}`);
+    await bot.telegram.sendMessage(userId, message, {
       parse_mode: "HTML",
       disable_web_page_preview: true,
     });
-    console.log(`✅ Personal message sent to @${username} successfully`);
+    console.log(`✅ Personal message sent to user ID ${userId} successfully`);
     return true;
   } catch (error) {
     console.error(
-      `Error sending personal message to @${username}:`,
+      `Error sending personal message to user ID ${userId}:`,
       error.message
     );
     // Fallback: send without formatting
     try {
-      await bot.telegram.sendMessage(
-        `@${username}`,
-        message.replace(/<[^>]*>/g, ""),
-        {
-          disable_web_page_preview: true,
-        }
-      );
+      await bot.telegram.sendMessage(userId, message.replace(/<[^>]*>/g, ""), {
+        disable_web_page_preview: true,
+      });
       console.log(
-        `✅ Personal message sent to @${username} (fallback) successfully`
+        `✅ Personal message sent to user ID ${userId} (fallback) successfully`
       );
       return true;
     } catch (fallbackError) {
       console.error(
-        `Error sending fallback personal message to @${username}:`,
+        `Error sending fallback personal message to user ID ${userId}:`,
         fallbackError.message
       );
       return false;
