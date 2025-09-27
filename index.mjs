@@ -75,8 +75,8 @@ class MeshtasticRedisClient {
       );
 
       // Принудительная сборка мусора при высоком потреблении памяти
-      if (memUsage.heapUsed > 700 * 1024 * 1024) {
-        // 700MB
+      if (memUsage.heapUsed > 1600 * 1024 * 1024) {
+        // 1600MB (87% от 1843MB лимита)
         console.log(
           `⚠️ КРИТИЧЕСКОЕ потребление памяти: ${Math.round(
             memUsage.heapUsed / 1024 / 1024
@@ -99,8 +99,8 @@ class MeshtasticRedisClient {
             `⚠️ Сборка мусора недоступна. Перезапустите с флагом --expose-gc`
           );
         }
-      } else if (memUsage.heapUsed > 500 * 1024 * 1024) {
-        // 500MB
+      } else if (memUsage.heapUsed > 1400 * 1024 * 1024) {
+        // 1400MB (75% от лимита)
         console.log(
           `⚠️ Высокое потребление памяти: ${Math.round(
             memUsage.heapUsed / 1024 / 1024
