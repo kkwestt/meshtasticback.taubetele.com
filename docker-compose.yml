@@ -4,7 +4,7 @@ services:
   # Redis сервис (общий для всех)
   redis:
     image: redis:7-alpine
-    container_name: meshtastic_redis
+    container_name: meshtastic_storage_to_redis
     restart: unless-stopped
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
