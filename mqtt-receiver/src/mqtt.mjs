@@ -29,7 +29,9 @@ export class MQTTManager {
    * @param {Array} servers - Массив серверов для подключения
    */
   async connectToAllServers(servers) {
-    // console.log(`🚀 Подключение к ${servers.length} серверам...\n`);
+    console.log(
+      `🚀 [MQTT-Receiver] Подключение к ${servers.length} серверам...\n`
+    );
 
     // Параллельно подключаемся ко всем серверам
     const connectionPromises = servers.map((server) =>
@@ -44,7 +46,9 @@ export class MQTTManager {
     const failed = results.filter((r) => r.status === "rejected");
 
     if (failed.length > 0) {
-      console.log(`⚠️ Ошибки подключения к ${failed.length} серверам:`);
+      console.log(
+        `⚠️ [MQTT-Receiver] Ошибки подключения к ${failed.length} серверам:`
+      );
       failed.forEach((result, index) => {
         console.log(`  - ${servers[index].name}: ${result.reason}`);
       });
@@ -55,9 +59,11 @@ export class MQTTManager {
     ).length;
 
     console.log(
-      `\n🌐 Подключено к ${connectedCount}/${servers.length} серверам`
+      `\n🌐 [MQTT-Receiver] Подключено к ${connectedCount}/${servers.length} серверам`
     );
-    console.log("🎧 Прослушивание сети Meshtastic со всех серверов...\n");
+    console.log(
+      "🎧 [MQTT-Receiver] Прослушивание сети Meshtastic со всех серверов...\n"
+    );
     console.log("=".repeat(50));
 
     return { successful, failed: failed.length, total: servers.length };
@@ -69,7 +75,7 @@ export class MQTTManager {
    */
   async connectToServer(server) {
     return new Promise((resolve, reject) => {
-      console.log(`🔌 [${server.name}] Подключение...`);
+      console.log(`🔌 [MQTT-Receiver] [${server.name}] Подключение...`);
 
       const clientId = this.generateClientId(server.name);
       const client = this.createMqttClient(server, clientId);
@@ -95,7 +101,9 @@ export class MQTTManager {
       // Таймаут для подключения
       const timeout = setTimeout(() => {
         if (!connectionInfo.isConnected) {
-          console.log(`⏰ [${server.name}] Таймаут подключения`);
+          console.log(
+            `⏰ [MQTT-Receiver] [${server.name}] Таймаут подключения`
+          );
           reject(new Error(`Connection timeout for ${server.name}`));
         }
       }, this.connectionTimeout + 5000);
@@ -115,7 +123,7 @@ export class MQTTManager {
   generateClientId(serverName) {
     const cleanName = serverName.replace(/\./g, "_");
     const randomId = Math.random().toString(16).substring(2, 8);
-    return `mqtt_${cleanName}_${randomId}`;
+    return `mqtt_receiver_${cleanName}_${randomId}`;
   }
 
   /**
@@ -169,7 +177,7 @@ export class MQTTManager {
    */
   setupClientEventHandlers(client, server, connectionInfo, resolve, reject) {
     client.on("connect", () => {
-      // console.log(`✅ [${server.name}] Подключен`);
+      console.log(`✅ [MQTT-Receiver] [${server.name}] Подключен`);
       connectionInfo.isConnected = true;
       connectionInfo.reconnectAttempts = 0;
 
@@ -189,7 +197,7 @@ export class MQTTManager {
         } catch (error) {
           if (shouldLogError(error.message)) {
             console.error(
-              `❌ [${server.name}] Ошибка обработки сообщения:`,
+              `❌ [MQTT-Receiver] [${server.name}] Ошибка обработки сообщения:`,
               error.message
             );
           }
@@ -199,7 +207,10 @@ export class MQTTManager {
 
     client.on("error", (error) => {
       if (shouldLogError(error.message)) {
-        console.error(`❌ [${server.name}] MQTT ошибка:`, error.message);
+        console.error(
+          `❌ [MQTT-Receiver] [${server.name}] MQTT ошибка:`,
+          error.message
+        );
       }
       connectionInfo.isConnected = false;
 
@@ -211,23 +222,23 @@ export class MQTTManager {
 
     client.on("close", () => {
       connectionInfo.isConnected = false;
-      console.log(`🔌 [${server.name}] Соединение закрыто`);
+      console.log(`🔌 [MQTT-Receiver] [${server.name}] Соединение закрыто`);
     });
 
     client.on("offline", () => {
       connectionInfo.isConnected = false;
-      console.log(`📴 [${server.name}] Оффлайн`);
+      console.log(`📴 [MQTT-Receiver] [${server.name}] Оффлайн`);
     });
 
     client.on("reconnect", () => {
       connectionInfo.reconnectAttempts++;
       console.log(
-        `🔄 [${server.name}] Переподключение... (попытка ${connectionInfo.reconnectAttempts})`
+        `🔄 [MQTT-Receiver] [${server.name}] Переподключение... (попытка ${connectionInfo.reconnectAttempts})`
       );
 
       if (connectionInfo.reconnectAttempts > this.maxRetries) {
         console.log(
-          `❌ [${server.name}] Превышено максимальное количество попыток переподключения`
+          `❌ [MQTT-Receiver] [${server.name}] Превышено максимальное количество попыток переподключения`
         );
         client.end();
       }
@@ -245,10 +256,15 @@ export class MQTTManager {
   subscribeToTopics(client, server, topics, resolve, reject) {
     client.subscribe(topics, (err) => {
       if (!err) {
-        console.log(`📡 [${server.name}] Подписан на ${topics.length} топиков`);
+        console.log(
+          `📡 [MQTT-Receiver] [${server.name}] Подписан на ${topics.length} топиков`
+        );
         resolve({ server, isConnected: true });
       } else {
-        console.error(`❌ [${server.name}] Ошибка подписки:`, err.message);
+        console.error(
+          `❌ [MQTT-Receiver] [${server.name}] Ошибка подписки:`,
+          err.message
+        );
         reject(err);
       }
     });
@@ -258,14 +274,14 @@ export class MQTTManager {
    * Отключается от всех серверов
    */
   disconnect() {
-    console.log("\n👋 Отключение от всех серверов...");
+    console.log("\n👋 [MQTT-Receiver] Отключение от всех серверов...");
 
     const disconnectPromises = Array.from(this.connections.entries()).map(
       ([serverName, connectionInfo]) => {
         return new Promise((resolve) => {
           if (connectionInfo.client) {
             connectionInfo.client.end(false, {}, () => {
-              console.log(`✅ [${serverName}] Отключен`);
+              console.log(`✅ [MQTT-Receiver] [${serverName}] Отключен`);
               resolve();
             });
           } else {

@@ -1,23 +1,74 @@
 version: "3.8"
 
 services:
+  # Redis сервис (общий для всех)
+  redis:
+    image: redis:7-alpine
+    container_name: meshtastic_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - meshtastic_network
+    mem_limit: 768m
+    mem_reservation: 256m
+
+  # MQTT Receiver сервис (приём и обработка MQTT данных)
+  mqtt-receiver:
+    build:
+      context: ./mqtt-receiver
+      dockerfile: Dockerfile
+    container_name: meshtastic_mqtt_receiver
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Ограничиваем память для Node.js до 1GB
+      - NODE_OPTIONS=--max-old-space-size=1024
+    volumes:
+      - ./config.mjs:/app/config.mjs:ro
+      - ./protobufs:/app/protobufs:ro
+    networks:
+      - meshtastic_network
+
+  # Основной сервис (HTTP API и Telegram бот)
   meshtasticback_taubetele_com_81:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: meshtasticback_taubetele_com_81
     restart: unless-stopped
+    depends_on:
+      - redis
     ports:
       - "81:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      # Ограничиваем память для Node.js до 1.8GB и включаем сборку мусора
-      - NODE_OPTIONS=--max-old-space-size=2208 --expose-gc
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Ограничиваем память для Node.js до 1.5GB (меньше, чем раньше)
+      - NODE_OPTIONS=--max-old-space-size=1536
     # Ограничиваем ресурсы контейнера
-    mem_limit: 2.5g
+    mem_limit: 2g
     mem_reservation: 512m
     volumes:
       - ./logs:/app/logs
       - ./config.mjs:/app/config.mjs:ro
-    network_mode: bridge
+    networks:
+      - meshtastic_network
+
+# Создаем сеть для связи между контейнерами
+networks:
+  meshtastic_network:
+    driver: bridge
+
+# Постоянное хранилище для Redis
+volumes:
+  redis_data:

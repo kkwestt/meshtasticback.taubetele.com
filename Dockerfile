@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 # Устанавливаем переменные окружения для оптимизации памяти
 # Примечание: --optimize-for-size не может быть в NODE_OPTIONS, только в CMD
-ENV NODE_OPTIONS="--max-old-space-size=2048 --expose-gc"
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 ENV PORT=3000
 
 # Устанавливаем git для клонирования репозитория
@@ -35,9 +35,6 @@ USER meshtastic
 # Открываем порт
 EXPOSE 3000
 
-# Настраиваем healthcheck для мониторинга памяти
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "const used = process.memoryUsage().heapUsed / 1024 / 1024; console.log(\`Memory: \${Math.round(used)}MB\`); process.exit(used > 1500 ? 1 : 0);"
 
 # Запускаем приложение с оптимизированными настройками памяти
-CMD ["node", "--max-old-space-size=2048", "--expose-gc", "--optimize-for-size", "index.mjs"]
+CMD ["node", "--max-old-space-size=2048", "--optimize-for-size", "src/index.mjs"]

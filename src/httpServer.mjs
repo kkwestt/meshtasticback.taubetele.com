@@ -2,7 +2,7 @@ import express from "express";
 import compression from "compression";
 import cors from "cors";
 import { handleEndpointError } from "./utils.mjs";
-import { adminConfig } from "./config.mjs";
+import { adminConfig } from "../config.mjs";
 
 /**
  * Оптимизированный HTTP сервер (только новая схема)
@@ -85,7 +85,6 @@ export class HTTPServer {
    */
   async handleRootEndpoint(req, res) {
     try {
-      const stats = this.redisManager.getCacheStats();
       const portnumStats = await this.redisManager.getPortnumStats();
 
       const totalDevices = Object.values(portnumStats).reduce(
@@ -108,10 +107,6 @@ export class HTTPServer {
         statistics: {
           total_devices: totalDevices,
           total_messages: totalMessages,
-          cache_entries: stats.totalEntries,
-          memory_usage_mb: Math.round(
-            process.memoryUsage().heapUsed / 1024 / 1024
-          ),
         },
 
         endpoints: {
@@ -190,13 +185,9 @@ export class HTTPServer {
    */
   async handleStatsEndpoint(req, res) {
     try {
-      const cacheStats = this.redisManager.getCacheStats();
-
       res.json({
         timestamp: Date.now(),
-        cache: cacheStats,
         uptime: process.uptime(),
-        memory: process.memoryUsage(),
         version: process.version,
       });
     } catch (error) {
@@ -287,7 +278,7 @@ export class HTTPServer {
 
       // Добавляем заголовки кэширования и сжатия
       res.set({
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "no-cache",
         "Content-Type": "application/json",
         "X-Device-Count": Object.keys(dots).length,
       });
@@ -325,7 +316,7 @@ export class HTTPServer {
 
       // Добавляем заголовки кэширования и сжатия
       res.set({
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "no-cache",
         "Content-Type": "application/json",
         "X-Response-Time": `${responseTime}ms`,
         "X-Device-Count": Object.keys(mapData).length,
@@ -634,7 +625,7 @@ export class HTTPServer {
       timestamp: Date.now(),
       available_endpoints: {
         data: ["/dots", "/portnum/:type/:deviceId"],
-        system: ["/health", "/stats", "/cache-status"],
+        system: ["/health", "/stats"],
         admin: ["/admin"],
       },
     });

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Deploying meshtasticback_taubetele_com_81..."
+echo "🚀 Deploying meshtasticback_taubetele_com microservices..."
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -39,7 +39,7 @@ fi
 
 # Создаем необходимые директории
 log "Creating directories..."
-mkdir -p logs config
+mkdir -p logs config mqtt-receiver/src src protobufs
 
 # Проверяем наличие конфигурационных файлов
 if [ ! -f ".env" ]; then
@@ -56,8 +56,17 @@ if [ ! -f "config.mjs" ]; then
     warn "config.mjs not found, application will use default configuration"
 fi
 
-# На сервере без git - код получаем через Docker build из GitHub
-log "Code will be pulled from GitHub during Docker build..."
+# Проверяем наличие исходного кода
+log "Checking source code..."
+if [ ! -d "src" ] || [ ! -d "mqtt-receiver/src" ]; then
+    warn "Source code directories not found!"
+    info "Make sure to copy source code before deployment"
+fi
+
+if [ ! -d "protobufs" ]; then
+    warn "Protobufs directory not found!"
+    info "Make sure to copy protobufs before deployment"
+fi
 
 # Останавливаем существующие контейнеры
 log "Stopping existing containers..."
@@ -88,22 +97,34 @@ if sudo /usr/local/bin/docker-compose ps | grep -q "Up"; then
     sudo /usr/local/bin/docker-compose ps
 
     info "📋 Useful commands:"
-    echo "  View logs: sudo /usr/local/bin/docker-compose logs -f meshtasticback_taubetele_com_81"
+    echo "  View main service logs: sudo /usr/local/bin/docker-compose logs -f meshtasticback_taubetele_com_81"
+    echo "  View mqtt-receiver logs: sudo /usr/local/bin/docker-compose logs -f mqtt-receiver"
     echo "  View all logs: sudo /usr/local/bin/docker-compose logs -f"
     echo "  Restart: sudo /usr/local/bin/docker-compose restart"
     echo "  Stop: sudo /usr/local/bin/docker-compose down"
     echo "  Update: ./deploy.sh"
-    echo "  Shell access: sudo /usr/local/bin/docker exec -it meshtasticback_taubetele_com_81 sh"
+    echo "  Main service shell: sudo /usr/local/bin/docker exec -it meshtasticback_taubetele_com_81 sh"
+    echo "  MQTT receiver shell: sudo /usr/local/bin/docker exec -it mqtt-receiver sh"
 
-    # Проверяем здоровье контейнера
+    # Проверяем здоровье контейнеров
     sleep 5
-    HEALTH=$(sudo /usr/local/bin/docker inspect --format='{{.State.Health.Status}}' meshtasticback_taubetele_com_81 2>/dev/null || echo "no-healthcheck")
-    if [ "$HEALTH" = "healthy" ]; then
-        log "🟢 Container is healthy"
-    elif [ "$HEALTH" = "starting" ]; then
-        warn "🟡 Container is starting up..."
-    elif [ "$HEALTH" = "unhealthy" ]; then
-        warn "🔴 Container is unhealthy, check logs"
+    MAIN_HEALTH=$(sudo /usr/local/bin/docker inspect --format='{{.State.Health.Status}}' meshtasticback_taubetele_com_81 2>/dev/null || echo "no-healthcheck")
+    MQTT_HEALTH=$(sudo /usr/local/bin/docker inspect --format='{{.State.Health.Status}}' mqtt-receiver 2>/dev/null || echo "no-healthcheck")
+    
+    if [ "$MAIN_HEALTH" = "healthy" ]; then
+        log "🟢 Main service container is healthy"
+    elif [ "$MAIN_HEALTH" = "starting" ]; then
+        warn "🟡 Main service container is starting up..."
+    elif [ "$MAIN_HEALTH" = "unhealthy" ]; then
+        warn "🔴 Main service container is unhealthy, check logs"
+    fi
+    
+    if [ "$MQTT_HEALTH" = "healthy" ]; then
+        log "🟢 MQTT receiver container is healthy"
+    elif [ "$MQTT_HEALTH" = "starting" ]; then
+        warn "🟡 MQTT receiver container is starting up..."
+    elif [ "$MQTT_HEALTH" = "unhealthy" ]; then
+        warn "🔴 MQTT receiver container is unhealthy, check logs"
     fi
 
 else
@@ -111,8 +132,13 @@ else
 fi
 
 # Показываем логи
-log "Recent logs:"
-sudo /usr/local/bin/docker-compose logs --tail=30 meshtasticback_taubetele_com_81
+log "Recent logs from main service:"
+sudo /usr/local/bin/docker-compose logs --tail=15 meshtasticback_taubetele_com_81
 
-log "🎉 Deployment completed!"
-info "Monitor logs with: sudo /usr/local/bin/docker-compose logs -f meshtasticback_taubetele_com_81"
+log "Recent logs from mqtt-receiver:"
+sudo /usr/local/bin/docker-compose logs --tail=15 mqtt-receiver
+
+log "🎉 Microservices deployment completed!"
+info "Monitor logs with:"
+info "  Main service: sudo /usr/local/bin/docker-compose logs -f meshtasticback_taubetele_com_81"
+info "  MQTT receiver: sudo /usr/local/bin/docker-compose logs -f mqtt-receiver"

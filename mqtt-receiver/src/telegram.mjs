@@ -1,5 +1,5 @@
 import { Telegraf } from "telegraf";
-import { botSettings } from "./config.mjs";
+import { botSettings } from "../config.mjs";
 
 const MESSAGE_GROUP_TIMEOUT = 10 * 1000;
 
