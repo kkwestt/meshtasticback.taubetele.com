@@ -13,9 +13,9 @@ services:
       - NODE_ENV=production
       - PORT=3000
       # Ограничиваем память для Node.js до 1.8GB и включаем сборку мусора
-      - NODE_OPTIONS=--max-old-space-size=1843 --expose-gc
+      - NODE_OPTIONS=--max-old-space-size=2208 --expose-gc
     # Ограничиваем ресурсы контейнера
-    mem_limit: 2g
+    mem_limit: 2.5g
     mem_reservation: 512m
     volumes:
       - ./logs:/app/logs
