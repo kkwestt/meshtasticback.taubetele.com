@@ -13,6 +13,7 @@ RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install
 # Копируем исходный код приложения
 COPY src/ ./src/
 COPY *.json ./
+COPY config.mjs ./
 
 # Копируем protobufs из родительского контекста
 COPY protobufs ./protobufs

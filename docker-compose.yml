@@ -32,7 +32,6 @@ services:
       # Ограничиваем память для Node.js до 1GB
       - NODE_OPTIONS=--max-old-space-size=1024
     volumes:
-      - ./config.mjs:/app/config.mjs:ro
       - ./protobufs:/app/protobufs:ro
     networks:
       - meshtastic_network
