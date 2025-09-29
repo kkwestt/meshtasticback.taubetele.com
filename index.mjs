@@ -8,7 +8,12 @@ import { servers, redisConfig, serverConfig } from "./config.mjs";
 import { MQTTManager } from "./mqtt.mjs";
 import { RedisManager } from "./redisManager.mjs";
 import { HTTPServer } from "./httpServer.mjs";
-import { handleTelegramMessage, initializeTelegramBot } from "./telegram.mjs";
+import {
+  handleTelegramMessage,
+  initializeTelegramBot,
+  cleanupTelegramResources,
+  sendPersonalMessage,
+} from "./telegram.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
 import {
   shouldLogError,
@@ -56,35 +61,110 @@ class MeshtasticRedisClient {
    * Запускает мониторинг производительности
    */
   startPerformanceMonitoring() {
-    setInterval(() => {
+    this.performanceInterval = setInterval(() => {
       const memUsage = process.memoryUsage();
       const uptime = Date.now() - this.stats.startTime;
       const errorRate =
         (this.stats.errorsCount / (this.stats.messagesProcessed || 1)) * 100;
 
+      const memoryMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+      const rssMemoryMB = Math.round(memUsage.rss / 1024 / 1024);
+
       console.log(
         `📊 Статистика: сообщений=${this.stats.messagesProcessed}, ошибок=${
           this.stats.errorsCount
-        } (${errorRate.toFixed(2)}%), память=${Math.round(
-          memUsage.heapUsed / 1024 / 1024
-        )}MB, время=${Math.round(uptime / 1000)}с`
+        } (${errorRate.toFixed(
+          2
+        )}%), память=${memoryMB}MB (RSS: ${rssMemoryMB}MB), время=${Math.round(
+          uptime / 1000
+        )}с`
       );
 
-      // Предупреждение о высоком потреблении памяти
-      if (memUsage.heapUsed > 500 * 1024 * 1024) {
-        // 500MB
+      // КРИТИЧЕСКИ АГРЕССИВНЫЕ пороги для памяти (снижаем в 2 раза)
+      if (memUsage.heapUsed > 600 * 1024 * 1024) {
+        // 600MB (30% от лимита) - начинаем действовать намного раньше
         console.log(
-          `⚠️ Высокое потребление памяти: ${Math.round(
-            memUsage.heapUsed / 1024 / 1024
-          )}MB`
+          `⚠️ КРИТИЧЕСКОЕ потребление памяти: ${memoryMB}MB - запуск экстренной очистки`
         );
+
+        // Экстренная очистка кэшей Redis Manager
+        if (this.redisManager) {
+          console.log("🧹 Экстренная очистка кэшей...");
+          this.redisManager.clearCache();
+          this.redisManager.cleanupInactiveDevices();
+          this.redisManager.enforceMapDataSize();
+        }
+
+        // Принудительная сборка мусора
+        if (global.gc) {
+          const memBefore = memUsage.heapUsed;
+          global.gc();
+          const newMemUsage = process.memoryUsage();
+          const freed = Math.round(
+            (memBefore - newMemUsage.heapUsed) / 1024 / 1024
+          );
+          console.log(
+            `🗑️ Сборка мусора завершена. Память: ${Math.round(
+              newMemUsage.heapUsed / 1024 / 1024
+            )}MB (освобождено ${freed}MB)`
+          );
+
+          // Если освобождено мало памяти, это признак серьезной утечки
+          if (freed < 20 && memoryMB > 600) {
+            console.log(
+              "🚨 ПРЕДУПРЕЖДЕНИЕ: Возможна серьезная утечка памяти! Освобождено мало памяти."
+            );
+
+            // Экстренные меры при утечке памяти
+            if (this.redisManager) {
+              console.log(
+                "🆘 Экстренная ПОЛНАЯ очистка всех кэшей и данных в памяти!"
+              );
+              this.redisManager.emergencyMemoryCleanup();
+            }
+          }
+        } else {
+          console.log(
+            `⚠️ Сборка мусора недоступна. Перезапустите с флагом --expose-gc`
+          );
+        }
+      } else if (memUsage.heapUsed > 400 * 1024 * 1024) {
+        // 400MB (20% от лимита) - профилактика на раннем этапе
+        console.log(
+          `⚠️ Высокое потребление памяти: ${memoryMB}MB - профилактическая очистка`
+        );
+
+        // Профилактическая очистка
+        if (this.redisManager) {
+          this.redisManager.cleanupExpiredCache();
+          this.redisManager.enforceCacheSize();
+        }
       }
 
       // Предупреждение о высокой частоте ошибок
       if (errorRate > 10) {
         console.log(`⚠️ Высокая частота ошибок: ${errorRate.toFixed(2)}%`);
       }
-    }, 30000); // Каждые 30 секунд
+
+      // Дополнительный мониторинг для критических случаев
+      if (memUsage.heapUsed > 800 * 1024 * 1024) {
+        // 800MB - критический уровень (40% от лимита)
+        console.log(
+          `🚨 КРИТИЧЕСКИЙ УРОВЕНЬ ПАМЯТИ: ${memoryMB}MB! Принудительная глубокая очистка!`
+        );
+
+        // Логируем статистику Redis Manager
+        if (this.redisManager) {
+          const cacheStats = this.redisManager.getCacheStats();
+          const deviceCount = Object.keys(
+            this.redisManager.mapDataInMemory || {}
+          ).length;
+          console.log(
+            `📊 Кэш Redis: ${cacheStats.totalEntries} записей, устройств в памяти: ${deviceCount}`
+          );
+        }
+      }
+    }, 10000); // Каждые 10 секунд для критически частого мониторинга
   }
 
   /**
@@ -228,9 +308,28 @@ class MeshtasticRedisClient {
 
       // Краткое логирование для мониторинга
       if (this.stats.messagesProcessed % 1000 === 0) {
+        const memUsage = process.memoryUsage();
+        const memoryMB = Math.round(memUsage.heapUsed / 1024 / 1024);
         console.log(
-          `📊 Обработано сообщений: ${this.stats.messagesProcessed}, ошибок: ${this.stats.errorsCount}`
+          `📊 Обработано сообщений: ${this.stats.messagesProcessed}, ошибок: ${this.stats.errorsCount}, память: ${memoryMB}MB`
         );
+
+        // Проверяем состояние памяти на каждые 1000 сообщений
+        if (memUsage.heapUsed > 500 * 1024 * 1024) {
+          // 500MB - снижаем до 25% от лимита
+          console.log(
+            "🧹 Профилактическая сборка мусора после обработки 1000 сообщений"
+          );
+          if (global.gc) {
+            const beforeGC = process.memoryUsage().heapUsed;
+            global.gc();
+            const afterGC = process.memoryUsage().heapUsed;
+            const freed = Math.round((beforeGC - afterGC) / 1024 / 1024);
+            console.log(
+              `🗑️ Освобождено ${freed}MB при профилактической сборке`
+            );
+          }
+        }
       }
 
       // console.log("=".repeat(50));
@@ -274,20 +373,39 @@ class MeshtasticRedisClient {
       }
     } catch (error) {
       this.stats.errorsCount++;
-      console.error(
-        `❌ [${server.name}] Ошибка обработки сообщения:`,
-        error.message
-      );
+
+      // Логируем только значимые ошибки, не спамим консоль
+      if (shouldLogError(error.message)) {
+        console.error(
+          `❌ [${server.name}] Ошибка обработки сообщения:`,
+          error.message
+        );
+      }
 
       // Критическая ошибка - может привести к перезапуску
       if (
         error.message.includes("out of memory") ||
-        error.message.includes("Maximum call stack")
+        error.message.includes("Maximum call stack") ||
+        error.message.includes("heap")
       ) {
         console.error(`🚨 КРИТИЧЕСКАЯ ОШИБКА: ${error.message}`);
         console.error(
           `📊 Состояние: сообщений=${this.stats.messagesProcessed}, ошибок=${this.stats.errorsCount}`
         );
+
+        // Экстренная очистка памяти при критической ошибке
+        if (this.redisManager) {
+          console.log(
+            "🚨 Экстренная очистка памяти из-за критической ошибки..."
+          );
+          this.redisManager.clearCache();
+          this.redisManager.cleanupInactiveDevices();
+        }
+
+        if (global.gc) {
+          global.gc();
+          console.log("🗑️ Выполнена экстренная сборка мусора");
+        }
       }
     }
   }
@@ -322,20 +440,42 @@ class MeshtasticRedisClient {
         );
       }
 
-      // Валидация пакета
+      // Валидация пакета с более строгими ограничениями
       if (!isValidPacket(arrayBuffer)) {
-        console.log(
-          `⚠️ [${server.name}] Невалидный пакет от ${user}, размер: ${arrayBuffer.length}`
-        );
+        // Не логируем слишком часто, чтобы избежать спама
+        if (this.stats.messagesProcessed % 100 === 0) {
+          console.log(
+            `⚠️ [${server.name}] Невалидный пакет от ${user}, размер: ${arrayBuffer.length}`
+          );
+        }
+        // Принудительно очищаем ссылку на буфер + экстренная очистка
+        arrayBuffer = null;
+        if (global.gc && this.stats.messagesProcessed % 500 === 0) {
+          global.gc(); // Микро-GC каждые 500 невалидных пакетов
+        }
         return;
       }
 
-      // Дополнительная проверка размера перед декодированием
-      if (arrayBuffer.length > 1048576) {
-        // 1MB лимит
+      // Более строгие ограничения размера для экономии памяти
+      if (arrayBuffer.length > 524288) {
+        // 512KB лимит (уменьшили с 1MB)
         console.log(
           `❌ [${server.name}] Пакет слишком большой: ${arrayBuffer.length} байт от ${user}`
         );
+        arrayBuffer = null;
+        if (global.gc && this.stats.messagesProcessed % 1000 === 0) {
+          global.gc(); // Микро-GC каждые 1000 больших пакетов
+        }
+        return;
+      }
+
+      // Дополнительная проверка на подозрительные размеры
+      if (arrayBuffer.length < 10) {
+        // Слишком маленький пакет, скорее всего мусор
+        arrayBuffer = null;
+        if (global.gc && this.stats.messagesProcessed % 2000 === 0) {
+          global.gc(); // Микро-GC каждые 2000 маленьких пакетов
+        }
         return;
       }
 
@@ -386,6 +526,9 @@ class MeshtasticRedisClient {
       }
     } catch (error) {
       console.error(`❌ Ошибка обработки protobuf:`, error.message);
+    } finally {
+      // Принудительно очищаем ссылку на буфер в любом случае
+      arrayBuffer = null;
     }
   }
 
@@ -545,11 +688,6 @@ class MeshtasticRedisClient {
         return;
       }
 
-      // Логирование критических событий
-      if (eventType === "user" && event.data?.portnum === 4) {
-        console.log(`👤 [${server.name}] Обновление пользователя ${from}`);
-      }
-
       // Обновляем время последней активности для карты
       await this.updateDotActivityTime(from, event, server);
 
@@ -607,9 +745,6 @@ class MeshtasticRedisClient {
 
         const portnumName = this.getPortnumName(event.data.portnum);
 
-        console.log(
-          `💾 [${server.name}] Сохранение portnum ${event.data.portnum} для устройства ${event.from}`
-        );
         await this.redisManager.savePortnumMessage(
           event.data.portnum,
           event.from,
@@ -658,11 +793,6 @@ class MeshtasticRedisClient {
     additionalInfo = null
   ) {
     try {
-      // Логирование обновлений данных
-      console.log(
-        `🔄 Обновление данных устройства ${deviceId}, portnum: ${portnum}`
-      );
-
       // Обрабатываем разные типы сообщений для обновления dots данных
       if (portnum === 4 || portnum === "NODEINFO_APP") {
         // Данные пользователя
@@ -689,11 +819,6 @@ class MeshtasticRedisClient {
         // }
 
         if (validLongName || validShortName) {
-          console.log(
-            `👤 Обновление пользователя ${deviceId}: ${
-              validLongName || "N/A"
-            } / ${validShortName || "N/A"}`
-          );
           await this.redisManager.updateDotData(
             deviceId,
             {
@@ -712,9 +837,6 @@ class MeshtasticRedisClient {
           const latitude = latitudeI / 1e7;
           const longitude = longitudeI / 1e7;
 
-          console.log(
-            `📍 Обновление позиции ${deviceId}: ${latitude}, ${longitude}`
-          );
           await this.redisManager.updateDotData(
             deviceId,
             {
@@ -868,6 +990,12 @@ class MeshtasticRedisClient {
     console.log("👋 Отключение от всех сервисов...");
 
     try {
+      // Очищаем интервалы
+      if (this.performanceInterval) {
+        clearInterval(this.performanceInterval);
+        console.log("✅ Интервал мониторинга производительности остановлен");
+      }
+
       // Отключаем MQTT
       await this.mqttManager.disconnect();
 
@@ -876,9 +1004,49 @@ class MeshtasticRedisClient {
         await this.httpServer.stop();
       }
 
+      // Полная очистка памяти перед отключением Redis
+      if (this.redisManager) {
+        console.log("🧹 Полная очистка памяти перед отключением...");
+        this.redisManager.clearCache();
+        this.redisManager.mapDataInMemory = {};
+        this.redisManager.isMapDataLoaded = false;
+        console.log("✅ Все кэши и данные в памяти очищены");
+      }
+
       // Отключаем Redis
       if (this.redisManager) {
         await this.redisManager.disconnect();
+      }
+
+      // Очищаем ресурсы Telegram
+      cleanupTelegramResources();
+
+      // Очищаем собственные ссылки
+      this.protoTypes = {};
+      this.stats = {
+        messagesProcessed: 0,
+        errorsCount: 0,
+        startTime: Date.now(),
+      };
+
+      // Множественная принудительная сборка мусора при отключении
+      if (global.gc) {
+        console.log("🗑️ Выполнение множественной сборки мусора...");
+        for (let i = 0; i < 3; i++) {
+          const memBefore = process.memoryUsage().heapUsed;
+          global.gc();
+          const memAfter = process.memoryUsage().heapUsed;
+          const freed = Math.round((memBefore - memAfter) / 1024 / 1024);
+          console.log(`🗑️ Сборка мусора #${i + 1}: освобождено ${freed}MB`);
+
+          // Небольшая пауза между сборками
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        const finalMemory = Math.round(
+          process.memoryUsage().heapUsed / 1024 / 1024
+        );
+        console.log(`✅ Итоговое потребление памяти: ${finalMemory}MB`);
       }
     } catch (error) {
       console.error("Ошибка при отключении:", error);
@@ -890,7 +1058,25 @@ class MeshtasticRedisClient {
  * Главная функция запуска приложения
  */
 async function main() {
+  // Проверяем настройки Node.js для оптимальной работы с памятью
+  const memoryLimit = process.memoryUsage().heapTotal;
+  const hasGC = typeof global.gc === "function";
+
   console.log("🚀 Запуск Meshtastic MQTT сервера...");
+  console.log(`📊 Лимит памяти: ${Math.round(memoryLimit / 1024 / 1024)}MB`);
+  console.log(
+    `🗑️ Сборка мусора: ${
+      hasGC ? "✅ Доступна" : "❌ Недоступна (запустите с --expose-gc)"
+    }`
+  );
+
+  if (!hasGC) {
+    console.log(
+      "⚠️ РЕКОМЕНДАЦИЯ: Запустите приложение с флагом --expose-gc для лучшего управления памятью"
+    );
+    console.log("   Используйте: npm run start вместо: node index.mjs");
+  }
+
   console.log(`📡 Подключение к ${servers.length} серверам:`);
   servers.forEach((server) => {
     console.log(`  🌐 ${server.name} (${server.address})`);
@@ -924,6 +1110,19 @@ async function main() {
 
   // Запускаем клиент
   await client.init();
+
+  // Отправляем сообщение о запуске сервера пользователю с ID 14259
+  try {
+    const startupMessage =
+      `🚀` +
+      `${new Date().toLocaleString("ru-RU", {
+        timeZone: "Europe/Moscow",
+      })}\n`;
+
+    await sendPersonalMessage(14259, startupMessage);
+  } catch (error) {
+    console.error("❌ Ошибка отправки сообщения о запуске:", error.message);
+  }
 }
 
 // Запускаем только если файл запущен напрямую

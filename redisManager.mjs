@@ -30,13 +30,20 @@ export class RedisManager {
     this.redis = new Redis(config);
     this.cache = new Map();
     this.cacheTimestamps = new Map();
-    this.cacheTTL = 30000; // Увеличиваем TTL до 30 секунд для лучшего кэширования
+    this.cacheTTL = 10000; // КРИТИЧЕСКИ уменьшаем TTL до 10 секунд
+    this.maxCacheSize = 1000; // КРИТИЧЕСКИ уменьшаем размер кэша до 1000
     this.isQuerying = false;
     this.queryLock = new Map();
 
     // Данные карты в памяти сервера
-    this.mapDataInMemory = {};
+    this.mapDataInMemory = new Map();
     this.isMapDataLoaded = false;
+    this.maxMapDataSize = 2500; // КРИТИЧЕСКИ уменьшаем количество устройств в памяти
+
+    // Параметры для управления устаревшими устройствами
+    this.deviceInactivityTimeout = 24 * 60 * 60 * 1000; // 24 часа неактивности
+    this.lastMemoryCleanup = Date.now();
+    this.memoryCleanupInterval = 5 * 60 * 1000; // Очистка каждые 5 минут
 
     this.setupEventHandlers();
 
@@ -319,12 +326,187 @@ export class RedisManager {
    * Периодически очищает истекший кэш
    */
   startCacheCleanup() {
-    setInterval(() => {
-      const now = Date.now();
+    this.cacheCleanupInterval = setInterval(() => {
+      this.cleanupExpiredCache();
+      this.enforceCacheSize();
+      this.enforceMapDataSize();
+      this.cleanupInactiveDevices();
+      this.performMemoryOptimization();
+    }, 15000); // Каждые 15 секунд для КРИТИЧЕСКИ частой очистки
+  }
+
+  /**
+   * Очищает истекшие записи кэша
+   */
+  cleanupExpiredCache() {
+    const now = Date.now();
+    const keysToDelete = [];
+
+    this.cacheTimestamps.forEach((timestamp, key) => {
+      if (now - timestamp >= this.cacheTTL) {
+        keysToDelete.push(key);
+      }
+    });
+
+    keysToDelete.forEach((key) => {
+      this.cache.delete(key);
+      this.cacheTimestamps.delete(key);
+    });
+
+    if (keysToDelete.length > 0) {
+      console.log(`🗑️ Очищено ${keysToDelete.length} истекших записей кэша`);
+    }
+  }
+
+  /**
+   * Принудительно ограничивает размер кэша
+   */
+  enforceCacheSize() {
+    if (this.cache.size > this.maxCacheSize) {
+      const excessCount = this.cache.size - this.maxCacheSize;
+      const keysToDelete = [];
+
+      // Удаляем самые старые записи
+      for (const [key, timestamp] of this.cacheTimestamps.entries()) {
+        keysToDelete.push({ key, timestamp });
+      }
+
+      // Сортируем по времени и удаляем самые старые
+      keysToDelete.sort((a, b) => a.timestamp - b.timestamp);
+      const toRemove = keysToDelete.slice(0, excessCount);
+
+      toRemove.forEach(({ key }) => {
+        this.cache.delete(key);
+        this.cacheTimestamps.delete(key);
+      });
+
+      console.log(
+        `⚠️ Принудительно очищено ${excessCount} записей кэша (превышен лимит ${this.maxCacheSize})`
+      );
+    }
+  }
+
+  /**
+   * Принудительно ограничивает размер данных карты в памяти
+   */
+  enforceMapDataSize() {
+    const deviceCount = this.mapDataInMemory.size;
+    if (deviceCount > this.maxMapDataSize) {
+      const excessCount = deviceCount - this.maxMapDataSize;
+      const devices = Array.from(this.mapDataInMemory.entries());
+
+      // Сортируем по времени активности и удаляем самые старые
+      devices.sort((a, b) => (a[1].s_time || 0) - (b[1].s_time || 0));
+      const toRemove = devices.slice(0, excessCount);
+
+      let removedCount = 0;
+      toRemove.forEach(([deviceId]) => {
+        this.mapDataInMemory.delete(deviceId);
+
+        // Также очищаем связанные кэши
+        this.invalidateDotCache(deviceId);
+        this.invalidateUserCache(deviceId);
+
+        removedCount++;
+      });
+
+      console.log(
+        `⚠️ Принудительно удалено ${removedCount} устройств из памяти (превышен лимит ${this.maxMapDataSize})`
+      );
+
+      // Принудительно запускаем сборку мусора если доступна
+      if (global.gc) {
+        global.gc();
+      }
+    }
+  }
+
+  /**
+   * Очищает неактивные устройства из памяти
+   */
+  cleanupInactiveDevices() {
+    const now = Date.now();
+    const cutoffTime = now - this.deviceInactivityTimeout;
+
+    let removedCount = 0;
+    const devicesToRemove = [];
+
+    // Находим неактивные устройства
+    for (const [deviceId, deviceData] of this.mapDataInMemory.entries()) {
+      if (!deviceData.s_time || deviceData.s_time < cutoffTime) {
+        devicesToRemove.push(deviceId);
+      }
+    }
+
+    // Удаляем неактивные устройства
+    devicesToRemove.forEach((deviceId) => {
+      this.mapDataInMemory.delete(deviceId);
+      this.invalidateDotCache(deviceId);
+      this.invalidateUserCache(deviceId);
+      removedCount++;
+    });
+
+    if (removedCount > 0) {
+      console.log(
+        `🗑️ Очищено ${removedCount} неактивных устройств (неактивны > 24 часов)`
+      );
+    }
+  }
+
+  /**
+   * ЭКСТРЕННАЯ очистка памяти при критических утечках
+   */
+  emergencyMemoryCleanup() {
+    console.log("🆘 ЭКСТРЕННАЯ ПОЛНАЯ ОЧИСТКА ПАМЯТИ НАЧАЛАСЬ!");
+
+    try {
+      // Полная очистка всех кэшей
+      const cacheSize = this.cache.size;
+      this.cache.clear();
+      this.cacheTimestamps.clear();
+      console.log(`🗑️ Очищено ${cacheSize} записей кэша`);
+
+      // Полная очистка данных карты в памяти
+      const mapDevices = this.mapDataInMemory.size;
+      this.mapDataInMemory.clear();
+      this.isMapDataLoaded = false;
+      console.log(`🗺️ Очищено ${mapDevices} устройств из памяти карты`);
+
+      // Принудительная множественная сборка мусора
+      if (global.gc) {
+        for (let i = 0; i < 5; i++) {
+          const memBefore = process.memoryUsage().heapUsed;
+          global.gc();
+          const memAfter = process.memoryUsage().heapUsed;
+          const freed = Math.round((memBefore - memAfter) / 1024 / 1024);
+          console.log(
+            `🗑️ Экстренная сборка мусора #${i + 1}: освобождено ${freed}MB`
+          );
+        }
+      }
+
+      console.log("✅ ЭКСТРЕННАЯ ОЧИСТКА ПАМЯТИ ЗАВЕРШЕНА!");
+    } catch (error) {
+      console.error("🚨 Ошибка при экстренной очистке памяти:", error.message);
+    }
+  }
+
+  /**
+   * Выполняет дополнительную оптимизацию памяти
+   */
+  performMemoryOptimization() {
+    const now = Date.now();
+
+    // Выполняем глубокую очистку каждые 5 минут
+    if (now - this.lastMemoryCleanup > this.memoryCleanupInterval) {
+      this.lastMemoryCleanup = now;
+
+      // Очищаем все истекшие кэши более агрессивно
       const keysToDelete = [];
 
       this.cacheTimestamps.forEach((timestamp, key) => {
-        if (now - timestamp >= this.cacheTTL) {
+        if (now - timestamp >= this.cacheTTL / 2) {
+          // Удаляем кэши старше половины TTL
           keysToDelete.push(key);
         }
       });
@@ -335,9 +517,25 @@ export class RedisManager {
       });
 
       if (keysToDelete.length > 0) {
-        console.log(`🗑️ Очищено ${keysToDelete.length} истекших записей кэша`);
+        console.log(
+          `🧹 Агрессивная очистка кэша: удалено ${keysToDelete.length} записей`
+        );
       }
-    }, 60000); // Каждую минуту
+
+      // Принудительная сборка мусора
+      if (global.gc) {
+        const memBefore = process.memoryUsage().heapUsed;
+        global.gc();
+        const memAfter = process.memoryUsage().heapUsed;
+        const freed = Math.round((memBefore - memAfter) / 1024 / 1024);
+
+        if (freed > 0) {
+          console.log(
+            `🗑️ Принудительная сборка мусора освободила ${freed}MB памяти`
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -767,7 +965,7 @@ export class RedisManager {
   async getAllDotData() {
     // Сначала проверяем данные в памяти сервера
     if (this.isMapDataLoaded) {
-      return this.mapDataInMemory;
+      return Object.fromEntries(this.mapDataInMemory);
     }
 
     // Если данные в памяти не загружены, используем кэш
@@ -778,7 +976,7 @@ export class RedisManager {
 
     // Если кэш недействителен, загружаем данные в память
     await this.loadMapDataToMemory();
-    return this.mapDataInMemory;
+    return Object.fromEntries(this.mapDataInMemory);
   }
 
   /**
@@ -876,6 +1074,17 @@ export class RedisManager {
    */
   async disconnect() {
     try {
+      // Очищаем интервал очистки кэша
+      if (this.cacheCleanupInterval) {
+        clearInterval(this.cacheCleanupInterval);
+        console.log("✅ Интервал очистки кэша остановлен");
+      }
+
+      // Очищаем все кэши
+      this.clearCache();
+      this.mapDataInMemory.clear();
+      this.isMapDataLoaded = false;
+
       await this.redis.quit();
       console.log("✅ Redis отключен");
     } catch (error) {
@@ -894,7 +1103,7 @@ export class RedisManager {
       const keys = await this.redis.keys(pattern);
 
       if (keys.length === 0) {
-        this.mapDataInMemory = {};
+        this.mapDataInMemory.clear();
         this.isMapDataLoaded = true;
         console.log("🗺️ Данные карты загружены в память: 0 устройств");
         return;
@@ -946,13 +1155,14 @@ export class RedisManager {
       });
 
       // Сохраняем в память сервера
-      this.mapDataInMemory = allDots;
+      this.mapDataInMemory.clear();
+      for (const [deviceId, deviceData] of Object.entries(allDots)) {
+        this.mapDataInMemory.set(deviceId, deviceData);
+      }
       this.isMapDataLoaded = true;
 
       console.log(
-        `🗺️ Данные карты загружены в память: ${
-          Object.keys(allDots).length
-        } устройств`
+        `🗺️ Данные карты загружены в память: ${this.mapDataInMemory.size} устройств`
       );
 
       // Также обновляем кэш
@@ -980,15 +1190,15 @@ export class RedisManager {
 
       if (standardData) {
         // Обновляем в памяти
-        this.mapDataInMemory[deviceId] = standardData;
+        this.mapDataInMemory.set(deviceId, standardData);
 
         // Также обновляем кэш
-        this.cache.set("all_dots", this.mapDataInMemory);
+        this.cache.set("all_dots", Object.fromEntries(this.mapDataInMemory));
         this.cacheTimestamps.set("all_dots", Date.now());
       } else {
         // Если данные невалидны, удаляем из памяти
-        if (this.mapDataInMemory[deviceId]) {
-          delete this.mapDataInMemory[deviceId];
+        if (this.mapDataInMemory.has(deviceId)) {
+          this.mapDataInMemory.delete(deviceId);
           console.log(`🗑️ Удалено устройство ${deviceId} из памяти сервера`);
         }
       }
@@ -1005,12 +1215,12 @@ export class RedisManager {
    * @param {string} deviceId - ID устройства
    */
   removeDeviceFromMemory(deviceId) {
-    if (this.mapDataInMemory[deviceId]) {
-      delete this.mapDataInMemory[deviceId];
+    if (this.mapDataInMemory.has(deviceId)) {
+      this.mapDataInMemory.delete(deviceId);
       console.log(`🗑️ Удалено устройство ${deviceId} из памяти сервера`);
 
       // Также обновляем кэш
-      this.cache.set("all_dots", this.mapDataInMemory);
+      this.cache.set("all_dots", Object.fromEntries(this.mapDataInMemory));
       this.cacheTimestamps.set("all_dots", Date.now());
     }
   }
@@ -1024,7 +1234,7 @@ export class RedisManager {
       console.warn("⚠️ Данные карты еще не загружены в память");
       return {};
     }
-    return this.mapDataInMemory;
+    return Object.fromEntries(this.mapDataInMemory);
   }
 
   /**

@@ -28,12 +28,12 @@ info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
 }
 
-# Проверяем наличие Docker
-if ! command -v docker &> /dev/null; then
+# Проверяем наличие Docker (Synology paths)
+if ! command -v /usr/local/bin/docker &> /dev/null; then
     error "Docker is not installed"
 fi
 
-if ! command -v docker-compose &> /dev/null; then
+if ! command -v /usr/local/bin/docker-compose &> /dev/null; then
     error "Docker Compose is not installed"
 fi
 
@@ -56,21 +56,24 @@ if [ ! -f "config.mjs" ]; then
     warn "config.mjs not found, application will use default configuration"
 fi
 
+# На сервере без git - код получаем через Docker build из GitHub
+log "Code will be pulled from GitHub during Docker build..."
+
 # Останавливаем существующие контейнеры
 log "Stopping existing containers..."
-docker-compose down || true
+sudo /usr/local/bin/docker-compose down || true
 
 # Очищаем старые образы
 log "Cleaning up old images..."
-docker image prune -f || true
+sudo /usr/local/bin/docker image prune -f || true
 
 # Собираем новый образ
 log "Building Docker image..."
-docker-compose build --no-cache
+sudo /usr/local/bin/docker-compose build --no-cache
 
 # Запускаем контейнеры
 log "Starting containers..."
-docker-compose up -d
+sudo /usr/local/bin/docker-compose up -d
 
 # Ждем запуска
 log "Waiting for containers to start..."
@@ -78,23 +81,23 @@ sleep 15
 
 # Проверяем статус
 log "Checking container status..."
-if docker-compose ps | grep -q "Up"; then
+if sudo /usr/local/bin/docker-compose ps | grep -q "Up"; then
     log "✅ Deployment successful!"
 
     info "Container status:"
-    docker-compose ps
+    sudo /usr/local/bin/docker-compose ps
 
     info "📋 Useful commands:"
-    echo "  View logs: docker-compose logs -f meshtasticback_taubetele_com_81"
-    echo "  View all logs: docker-compose logs -f"
-    echo "  Restart: docker-compose restart"
-    echo "  Stop: docker-compose down"
+    echo "  View logs: sudo /usr/local/bin/docker-compose logs -f meshtasticback_taubetele_com_81"
+    echo "  View all logs: sudo /usr/local/bin/docker-compose logs -f"
+    echo "  Restart: sudo /usr/local/bin/docker-compose restart"
+    echo "  Stop: sudo /usr/local/bin/docker-compose down"
     echo "  Update: ./deploy.sh"
-    echo "  Shell access: docker exec -it meshtasticback_taubetele_com_81 sh"
+    echo "  Shell access: sudo /usr/local/bin/docker exec -it meshtasticback_taubetele_com_81 sh"
 
     # Проверяем здоровье контейнера
     sleep 5
-    HEALTH=$(docker inspect --format='{{.State.Health.Status}}' meshtasticback_taubetele_com_81 2>/dev/null || echo "no-healthcheck")
+    HEALTH=$(sudo /usr/local/bin/docker inspect --format='{{.State.Health.Status}}' meshtasticback_taubetele_com_81 2>/dev/null || echo "no-healthcheck")
     if [ "$HEALTH" = "healthy" ]; then
         log "🟢 Container is healthy"
     elif [ "$HEALTH" = "starting" ]; then
@@ -109,7 +112,7 @@ fi
 
 # Показываем логи
 log "Recent logs:"
-docker-compose logs --tail=30 meshtasticback_taubetele_com_81
+sudo /usr/local/bin/docker-compose logs --tail=30 meshtasticback_taubetele_com_81
 
 log "🎉 Deployment completed!"
-info "Monitor logs with: docker-compose logs -f meshtasticback_taubetele_com_81"
+info "Monitor logs with: sudo /usr/local/bin/docker-compose logs -f meshtasticback_taubetele_com_81"

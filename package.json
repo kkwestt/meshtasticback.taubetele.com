@@ -5,8 +5,10 @@
   "main": "index.mjs",
   "type": "module",
   "scripts": {
-    "start": "node index.mjs",
-    "dev": "nodemon index.mjs",
+    "start": "node --max-old-space-size=3072 --expose-gc --optimize-for-size --gc-interval=100 --max-semi-space-size=128 index.mjs",
+    "start:prod": "node --max-old-space-size=3072 --expose-gc --optimize-for-size --gc-interval=100 --max-semi-space-size=128 index.mjs",
+    "start:debug": "node --max-old-space-size=3072 --expose-gc --inspect --gc-interval=100 --max-semi-space-size=128 index.mjs",
+    "dev": "nodemon --max-old-space-size=3072 --expose-gc --gc-interval=100 --max-semi-space-size=128 index.mjs",
     "lint": "eslint *.js",
     "lint:fix": "eslint *.js --fix"
   },

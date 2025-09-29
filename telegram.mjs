@@ -30,7 +30,10 @@ const messageGroups = new Map();
 const processedMessages = new Set();
 
 // Cleanup processed messages every 10 minutes
-setInterval(() => processedMessages.clear(), 10 * 60 * 1000);
+let messageCleanupInterval = setInterval(
+  () => processedMessages.clear(),
+  10 * 60 * 1000
+);
 
 // Hardware models map
 const HW_MODELS = {
@@ -1419,6 +1422,42 @@ const sendTelegramMessage = async (message, channelId) => {
   }
 };
 
+// Send personal message to a user by ID
+const sendPersonalMessage = async (userId, message) => {
+  if (!bot || !botSettings.ENABLE) return false;
+
+  try {
+    console.log(`📨 Sending personal message to user ID ${userId}`);
+    await bot.telegram.sendMessage(userId, message, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    console.log(`✅ Personal message sent to user ID ${userId} successfully`);
+    return true;
+  } catch (error) {
+    console.error(
+      `Error sending personal message to user ID ${userId}:`,
+      error.message
+    );
+    // Fallback: send without formatting
+    try {
+      await bot.telegram.sendMessage(userId, message.replace(/<[^>]*>/g, ""), {
+        disable_web_page_preview: true,
+      });
+      console.log(
+        `✅ Personal message sent to user ID ${userId} (fallback) successfully`
+      );
+      return true;
+    } catch (fallbackError) {
+      console.error(
+        `Error sending fallback personal message to user ID ${userId}:`,
+        fallbackError.message
+      );
+      return false;
+    }
+  }
+};
+
 // Safe reply function
 const safeReply = async (ctx, message) => {
   try {
@@ -1560,5 +1599,27 @@ export const handleTelegramMessage = async (
   }, MESSAGE_GROUP_TIMEOUT);
 };
 
+/**
+ * Очищает интервалы и ресурсы Telegram модуля
+ */
+export function cleanupTelegramResources() {
+  if (messageCleanupInterval) {
+    clearInterval(messageCleanupInterval);
+    console.log("✅ Интервал очистки сообщений Telegram остановлен");
+  }
+
+  // Очищаем Maps
+  messageGroups.clear();
+  processedMessages.clear();
+
+  console.log("✅ Ресурсы Telegram модуля очищены");
+}
+
 // Экспортируем функции для тестирования
-export { getDeviceStats, getGatewayInfoBatch, toNumericId, formatDeviceStats };
+export {
+  getDeviceStats,
+  getGatewayInfoBatch,
+  toNumericId,
+  formatDeviceStats,
+  sendPersonalMessage,
+};
