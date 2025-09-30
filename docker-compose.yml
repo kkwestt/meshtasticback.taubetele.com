@@ -34,6 +34,8 @@ services:
       - REDIS_PORT=6379
       # Ограничиваем память для Node.js до 1GB
       - NODE_OPTIONS=--max-old-space-size=1024
+      # Управление Telegram ботом (true/false)
+      - TELEGRAM_ENABLED=true
     volumes:
       - ./protobufs:/app/protobufs:ro
     networks:

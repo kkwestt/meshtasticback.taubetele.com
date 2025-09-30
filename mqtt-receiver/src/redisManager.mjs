@@ -150,7 +150,10 @@ export class RedisManager {
 
           // Удаляем из индексов
           await this.removeFromDeviceIndex(deviceId);
-          await this.removeFromPortnumIndex(deviceId, portnum || "UNKNOWN");
+          // Удаляем из индекса portnum только если он известен
+          if (portnum && portnum !== "UNKNOWN") {
+            await this.removeFromPortnumIndex(deviceId, portnum);
+          }
         }
         return;
       }
@@ -169,7 +172,10 @@ export class RedisManager {
 
       // Обновляем индексы
       await this.updateDeviceIndex(deviceId);
-      await this.updatePortnumIndex(deviceId, portnum);
+      // Добавляем в индекс portnum только если он известен
+      if (portnum && portnum !== "UNKNOWN") {
+        await this.updatePortnumIndex(deviceId, portnum);
+      }
     } catch (error) {
       console.error(
         `[MQTT-Receiver] Error updating dot data for ${deviceId}:`,
@@ -291,7 +297,7 @@ export class RedisManager {
    */
   async updatePortnumIndex(deviceId, portnum) {
     try {
-      await this.redis.sadd(`portnums:${portnum}`, deviceId);
+      await this.redis.sadd(`w:${portnum}`, deviceId);
     } catch (error) {
       console.error(
         `[MQTT-Receiver] Error updating portnum index for ${deviceId}:${portnum}:`,

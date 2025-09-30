@@ -275,20 +275,23 @@ export class HTTPServer {
 
       // Получаем только необходимые поля для карты
       const dots = await this.redisManager.getOptimizedDotData();
+      const deviceCount = Object.keys(dots).length;
+      const responseTime = Date.now() - startTime;
 
-      // Добавляем заголовки кэширования и сжатия
+      // Добавляем заголовки кэширования
       res.set({
-        "Cache-Control": "no-cache",
+        "Cache-Control": "public, max-age=30", // Кэшируем на 30 секунд
         "Content-Type": "application/json",
-        "X-Device-Count": Object.keys(dots).length,
+        "X-Device-Count": deviceCount,
+        "X-Response-Time": `${responseTime}ms`,
       });
 
       // Отправляем оптимизированные данные
       res.json({
         data: dots,
-        // timestamp: Date.now(),
-        // response_time_ms: responseTime,
-        // device_count: Object.keys(dots).length,
+        timestamp: Date.now(),
+        response_time_ms: responseTime,
+        device_count: deviceCount,
       });
     } catch (error) {
       handleEndpointError(error, res, "Dots endpoint");

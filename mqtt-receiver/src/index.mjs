@@ -4,7 +4,12 @@ import path from "path";
 import protobufjs from "protobufjs";
 
 // Импортируем модули
-import { servers, redisConfig, mqttReceiverConfig } from "../config.mjs";
+import {
+  servers,
+  redisConfig,
+  mqttReceiverConfig,
+  botSettings,
+} from "../config.mjs";
 import { MQTTManager } from "./mqtt.mjs";
 import { RedisManager } from "./redisManager.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
@@ -45,33 +50,6 @@ class MqttReceiver {
     this.redisManager = null;
     this.protoTypes = {};
     this.protobufDecoder = new ProtobufDecoder();
-    this.stats = {
-      messagesProcessed: 0,
-      errorsCount: 0,
-      startTime: Date.now(),
-    };
-
-    // Запускаем мониторинг производительности
-    this.startPerformanceMonitoring();
-  }
-
-  /**
-   * Запускает мониторинг производительности
-   */
-  startPerformanceMonitoring() {
-    this.performanceInterval = setInterval(() => {
-      const uptime = Date.now() - this.stats.startTime;
-      const errorRate =
-        (this.stats.errorsCount / (this.stats.messagesProcessed || 1)) * 100;
-
-      console.log(
-        `📊 [MQTT-Receiver] Статистика: сообщений=${
-          this.stats.messagesProcessed
-        }, ошибок=${this.stats.errorsCount} (${errorRate.toFixed(
-          2
-        )}%), время=${Math.round(uptime / 1000)}с`
-      );
-    }, 30000);
   }
 
   /**
@@ -179,9 +157,15 @@ class MqttReceiver {
    * Инициализирует Telegram бота
    */
   async initializeTelegram() {
-    console.log("🤖 [MQTT-Receiver] Инициализация Telegram бота...");
-    initializeTelegramBot(this.redisManager);
-    console.log("✅ [MQTT-Receiver] Telegram бот инициализирован успешно");
+    if (botSettings.ENABLE) {
+      console.log("🤖 [MQTT-Receiver] Инициализация Telegram бота...");
+      initializeTelegramBot(this.redisManager);
+      console.log("✅ [MQTT-Receiver] Telegram бот инициализирован успешно");
+    } else {
+      console.log(
+        "🚫 [MQTT-Receiver] Telegram бот отключен (TELEGRAM_ENABLED=false)"
+      );
+    }
   }
 
   /**
@@ -210,15 +194,6 @@ class MqttReceiver {
    */
   handleMessage(server, topic, payload) {
     try {
-      this.stats.messagesProcessed++;
-
-      // Краткое логирование для мониторинга
-      if (this.stats.messagesProcessed % 1000 === 0) {
-        console.log(
-          `📊 [MQTT-Receiver] Обработано сообщений: ${this.stats.messagesProcessed}, ошибок: ${this.stats.errorsCount}`
-        );
-      }
-
       // Парсим топик
       const topicParts = topic.split("/");
       if (topicParts.length < 3) {
@@ -251,8 +226,6 @@ class MqttReceiver {
         );
       }
     } catch (error) {
-      this.stats.errorsCount++;
-
       if (shouldLogError(error.message)) {
         console.error(
           `❌ [MQTT-Receiver] [${server.name}] Ошибка обработки сообщения:`,
@@ -284,11 +257,6 @@ class MqttReceiver {
     try {
       // Валидация пакета
       if (!isValidPacket(arrayBuffer)) {
-        if (this.stats.messagesProcessed % 100 === 0) {
-          console.log(
-            `⚠️ [MQTT-Receiver] [${server.name}] Невалидный пакет от ${user}, размер: ${arrayBuffer.length}`
-          );
-        }
         arrayBuffer = null;
         return;
       }
@@ -519,7 +487,11 @@ class MqttReceiver {
       }
 
       // Обрабатываем Telegram сообщения для текстовых сообщений
-      if (eventType === "message" && event.data?.portnum === 1) {
+      if (
+        eventType === "message" &&
+        event.data?.portnum === 1 &&
+        botSettings.ENABLE
+      ) {
         // Создаем событие в формате, ожидаемом handleTelegramMessage
         const telegramEvent = {
           id: event.id,
@@ -719,11 +691,6 @@ class MqttReceiver {
       cleanupTelegramResources();
 
       this.protoTypes = {};
-      this.stats = {
-        messagesProcessed: 0,
-        errorsCount: 0,
-        startTime: Date.now(),
-      };
     } catch (error) {
       console.error("[MQTT-Receiver] Ошибка при отключении:", error);
     }

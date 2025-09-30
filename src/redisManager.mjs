@@ -638,27 +638,95 @@ export class RedisManager {
    */
   async getOptimizedDotData() {
     try {
-      const allDots = await this.getAllDotData();
+      const startTime = Date.now();
+
+      // Проверяем кэш
+      const cacheKey = "optimized_dots_cache";
+      const cached = await this.redis.get(cacheKey);
+
+      if (cached) {
+        const duration = Date.now() - startTime;
+        console.log(`[HTTP-API] Cached dots data retrieved in ${duration}ms`);
+        return JSON.parse(cached);
+      }
+
+      // Используем SCAN для более эффективного получения ключей
+      const deviceIds = await this.getActiveDeviceIds();
+
+      if (deviceIds.length === 0) {
+        return {};
+      }
+
+      // Используем pipeline для массовых операций
+      const pipeline = this.redis.pipeline();
+
+      // Добавляем только необходимые поля в pipeline
+      deviceIds.forEach((deviceId) => {
+        pipeline.hmget(
+          `dots:${deviceId}`,
+          "longName",
+          "shortName",
+          "longitude",
+          "latitude",
+          "s_time",
+          "mqtt"
+        );
+      });
+
+      const results = await pipeline.exec();
       const optimizedDots = {};
 
-      for (const deviceId in allDots) {
-        const dotData = allDots[deviceId];
-        if (dotData) {
-          optimizedDots[deviceId] = {
-            longName: dotData.longName || "",
-            shortName: dotData.shortName || "",
-            longitude: dotData.longitude,
-            latitude: dotData.latitude,
-            s_time: dotData.s_time,
-            mqtt: dotData.mqtt || "",
+      // Обрабатываем результаты pipeline
+      results.forEach(([err, values], index) => {
+        if (err) {
+          console.error(
+            `Error getting data for device ${deviceIds[index]}:`,
+            err
+          );
+          return;
+        }
+
+        const [longName, shortName, longitude, latitude, s_time, mqtt] = values;
+
+        // Проверяем, что есть координаты (обязательно для карты)
+        if (longitude && latitude) {
+          optimizedDots[deviceIds[index]] = {
+            longName: longName || "",
+            shortName: shortName || "",
+            longitude: parseFloat(longitude),
+            latitude: parseFloat(latitude),
+            s_time: s_time ? parseInt(s_time) : 0,
+            mqtt: mqtt || "",
           };
         }
-      }
+      });
+
+      // Кэшируем результат на 30 секунд
+      await this.redis.setex(cacheKey, 30, JSON.stringify(optimizedDots));
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `[HTTP-API] Optimized dots data retrieved in ${duration}ms for ${
+          Object.keys(optimizedDots).length
+        } devices`
+      );
 
       return optimizedDots;
     } catch (error) {
       console.error("Error getting optimized dot data:", error.message);
       return {};
+    }
+  }
+
+  /**
+   * Инвалидирует кэш оптимизированных данных точек
+   */
+  async invalidateDotsCache() {
+    try {
+      await this.redis.del("optimized_dots_cache");
+      console.log("[HTTP-API] Dots cache invalidated");
+    } catch (error) {
+      console.error("[HTTP-API] Error invalidating dots cache:", error.message);
     }
   }
 
