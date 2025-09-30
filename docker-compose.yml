@@ -3,18 +3,21 @@ version: "3.8"
 services:
   # Redis сервис (общий для всех)
   redis:
-    image: redis:7-alpine
-    container_name: meshtastic_storage_to_redis
+    image: redis:8-alpine
+    container_name: meshtastic_redis
     restart: unless-stopped
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000
+    #command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000
+    environment:
+      - REDIS_DISABLE_MEMORY_WARNING=1
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - /volume2/docker/meshtastic_redis:/data
     networks:
       - meshtastic_network
-    mem_limit: 768m
-    mem_reservation: 256m
+    #mem_limit: 768m
+    #mem_reservation: 256m
 
   # MQTT Receiver сервис (приём и обработка MQTT данных)
   mqtt-receiver:
@@ -67,7 +70,4 @@ services:
 networks:
   meshtastic_network:
     driver: bridge
-
-# Постоянное хранилище для Redis
-volumes:
-  redis_data:
+# Постоянное хранилище для Redis теперь использует /volume2/docker/meshtastic_redis/
