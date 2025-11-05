@@ -252,7 +252,7 @@ export const CONSTANTS = {
   MAX_METADATA_ITEMS_COUNT: 200,
   CACHE_REFRESH_INTERVAL: 5000,
   DEVICE_EXPIRY_TIME: 24 * 60 * 60 * 1000, // 24 hours
-  RECONNECT_DELAY: 5000,
+  RECONNECT_DELAY: 30000, // 30с пауза после отключения
   DECRYPTION_KEYS: ["1PG7OiApB1nwvP+rz05pAQ==", "AQ=="],
   PROTOBUFS_PATH: "./protobufs",
   MAX_PORTNUM_MESSAGES: 200, // Максимальное количество сообщений для новой схемы по portnum

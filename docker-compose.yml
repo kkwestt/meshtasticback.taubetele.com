@@ -36,6 +36,8 @@ services:
       - NODE_OPTIONS=--max-old-space-size=1024
       # Управление Telegram ботом (true/false)
       - TELEGRAM_ENABLED=true
+      # Отключение статистических логов
+      - STATS_LOGGING_ENABLED=false
     volumes:
       - ./protobufs:/app/protobufs:ro
     networks:
