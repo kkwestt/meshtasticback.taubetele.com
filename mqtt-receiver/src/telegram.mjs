@@ -585,7 +585,7 @@ const formatDeviceStats = async (stats, redis) => {
 
   // Last messages section
   if (lastMessages?.length > 0) {
-    message += `💬 <b>Последние сообщения:</b>\n`;
+    message += `📡 <b>Последние сообщения:</b>\n`;
     // Показываем только одно последнее сообщение
     const lastMsg = lastMessages[lastMessages.length - 1];
     const timeAgo = formatTimeAgo(
