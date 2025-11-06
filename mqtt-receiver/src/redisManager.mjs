@@ -44,6 +44,32 @@ export class RedisManager {
   }
 
   /**
+   * Проверяет и помечает сообщение как обработанное для дедупликации
+   * @param {string} messageKey - Уникальный ключ сообщения
+   * @param {number} ttl - Время жизни в секундах (по умолчанию 3)
+   * @returns {boolean} - true если сообщение новое, false если уже было обработано
+   */
+  async checkAndMarkMessageProcessed(messageKey, ttl = 3) {
+    try {
+      const dedupeKey = `dedupe:${messageKey}`;
+
+      // Пытаемся установить ключ с NX (только если не существует)
+      const result = await this.redis.set(dedupeKey, "1", "EX", ttl, "NX");
+
+      // Если результат OK, то ключ был установлен (сообщение новое)
+      // Если результат null, то ключ уже существует (дубликат)
+      return result === "OK";
+    } catch (error) {
+      console.error(
+        "[MQTT-Receiver] Error in checkAndMarkMessageProcessed:",
+        error.message
+      );
+      // В случае ошибки возвращаем true, чтобы не потерять сообщение
+      return true;
+    }
+  }
+
+  /**
    * Сохраняет сообщение по portnum
    * @param {number|string} portnum - Номер или название порта
    * @param {string} deviceId - ID устройства
@@ -54,6 +80,20 @@ export class RedisManager {
       const portnumName = getPortnumName(portnum);
       if (!portnumName) {
         console.log(`⚠️ [MQTT-Receiver] Неизвестный portnum: ${portnum}`);
+        return;
+      }
+
+      // Создаем уникальный ключ для дедупликации
+      // Используем from + rxTime + portnum для идентификации
+      const rxTime = messageData.rxTime || Date.now();
+      const dedupeKey = `portnum:${deviceId}:${portnum}:${rxTime}`;
+
+      // Проверяем, не было ли уже обработано это сообщение
+      const isNew = await this.checkAndMarkMessageProcessed(dedupeKey);
+      if (!isNew) {
+        console.log(
+          `🔄 [MQTT-Receiver] Дубликат portnum сообщения пропущен: ${portnumName}:${deviceId}`
+        );
         return;
       }
 
@@ -85,6 +125,40 @@ export class RedisManager {
   async updateDotData(deviceId, updateData, options = {}) {
     const { portnum = "UNKNOWN" } = options;
     try {
+      // Создаем уникальный ключ для дедупликации на основе типа обновления и данных
+      let dedupeKey = `dot:${deviceId}:`;
+
+      if (
+        updateData.longitude !== undefined &&
+        updateData.latitude !== undefined
+      ) {
+        // Для координат округляем до 6 знаков для дедупликации
+        const lat = Math.round(updateData.latitude * 1000000);
+        const lon = Math.round(updateData.longitude * 1000000);
+        dedupeKey += `pos:${lat}:${lon}`;
+      } else if (
+        updateData.longName !== undefined ||
+        updateData.shortName !== undefined
+      ) {
+        // Для имен используем сами имена
+        dedupeKey += `name:${updateData.longName || ""}:${
+          updateData.shortName || ""
+        }`;
+      } else {
+        // Для обновления только времени используем текущее время с точностью до секунды
+        const timeKey = Math.floor(Date.now() / 1000);
+        dedupeKey += `time:${timeKey}`;
+      }
+
+      // Проверяем, не было ли уже обработано это обновление
+      const isNew = await this.checkAndMarkMessageProcessed(dedupeKey);
+      if (!isNew) {
+        console.log(
+          `🔄 [MQTT-Receiver] Дубликат dot обновления пропущен: ${deviceId}`
+        );
+        return;
+      }
+
       const key = `dots:${deviceId}`;
       const currentTime = Date.now();
 

@@ -1363,7 +1363,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
     }
 
-    message += `\n\n<pre>ТЕСТ📡 Получено шлюзами (${gateways.length}):\n`;
+    message += `\n\n<blockquote expandable>📡 Получено шлюзами (${gateways.length}):\n`;
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
       message += `📡 ${escapeHtml(
@@ -1382,7 +1382,7 @@ const sendGroupedMessage = async (redis, messageId) => {
 
       message += `\n`;
     });
-    message += `</pre>`;
+    message += `</blockquote>`;
 
     await sendTelegramMessage(message, group.channelId);
   } catch (error) {
