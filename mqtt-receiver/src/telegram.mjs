@@ -1363,12 +1363,12 @@ const sendGroupedMessage = async (redis, messageId) => {
       )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
     }
 
-    message += `\n\n<pre>📡 Получено шлюзами ТЕСТ (${gateways.length}):\n`;
+    message += `\n\n<pre>ТЕСТ📡 Получено шлюзами (${gateways.length}):\n`;
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
-      message += `• ${escapeHtml(gateway?.longName || "Unknown")} (${escapeHtml(
-        gatewayId
-      )})`;
+      message += `📡 ${escapeHtml(
+        gateway?.longName || "Unknown"
+      )} (${escapeHtml(gatewayId)})`;
 
       // Check if RSSI or SNR is 0, then show MQTT instead of values
       if (info.rxRssi === 0 || info.rxSnr === 0) {
