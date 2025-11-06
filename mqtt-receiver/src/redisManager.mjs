@@ -44,49 +44,51 @@ export class RedisManager {
   }
 
   /**
-   * Проверяет, является ли сообщение дубликатом (за последние 3 секунды)
+   * Проверяет, является ли сообщение дубликатом (за последние 5 секунд)
    * @param {string} key - Ключ Redis
    * @param {Object} newMessage - Новое сообщение для проверки
-   * @param {number} timeWindow - Временное окно в миллисекундах (по умолчанию 3 секунды)
+   * @param {number} timeWindow - Временное окно в миллисекундах (по умолчанию 5 секунды)
    * @returns {boolean} - true если дубликат, false если уникальное
    */
-  async isDuplicateMessage(key, newMessage, timeWindow = 3000) {
+  async isDuplicateMessage(key, newMessage, timeWindow = 5000) {
     try {
       const currentTime = newMessage.timestamp || Date.now();
-      
-      // Получаем последние несколько сообщений для проверки
-      const recentMessages = await this.redis.lrange(key, -5, -1);
-      
-      for (const msgStr of recentMessages) {
-        try {
-          const existingMsg = JSON.parse(msgStr);
-          
-          // Проверяем временное окно
-          const timeDiff = currentTime - existingMsg.timestamp;
-          if (timeDiff < 0 || timeDiff > timeWindow) {
-            continue; // Слишком старое или время некорректное
-          }
-          
-          // Сравниваем ключевые поля сообщения (исключая timestamp и gatewayId)
-          const newMsgCopy = { ...newMessage };
-          const existingMsgCopy = { ...existingMsg };
-          
-          // Удаляем поля, которые различаются у одного сообщения от разных шлюзов
-          delete newMsgCopy.timestamp;
-          delete existingMsgCopy.timestamp;
-          delete newMsgCopy.gatewayId;
-          delete existingMsgCopy.gatewayId;
-          
-          // Сравниваем остальные поля
-          if (JSON.stringify(newMsgCopy) === JSON.stringify(existingMsgCopy)) {
-            return true; // Найден дубликат
-          }
-        } catch (parseError) {
-          // Игнорируем ошибки парсинга старых сообщений
-          continue;
-        }
+
+      // Получаем только последнее сообщение для проверки
+      const recentMessages = await this.redis.lrange(key, -1, -1);
+
+      if (recentMessages.length === 0) {
+        return false; // Нет предыдущих сообщений
       }
-      
+
+      try {
+        const existingMsg = JSON.parse(recentMessages[0]);
+
+        // Проверяем временное окно
+        const timeDiff = currentTime - existingMsg.timestamp;
+        if (timeDiff < 0 || timeDiff > timeWindow) {
+          return false; // Слишком старое или время некорректное
+        }
+
+        // Сравниваем ключевые поля сообщения (исключая timestamp и gatewayId)
+        const newMsgCopy = { ...newMessage };
+        const existingMsgCopy = { ...existingMsg };
+
+        // Удаляем поля, которые различаются у одного сообщения от разных шлюзов
+        delete newMsgCopy.timestamp;
+        delete existingMsgCopy.timestamp;
+        delete newMsgCopy.gatewayId;
+        delete existingMsgCopy.gatewayId;
+
+        // Сравниваем остальные поля
+        if (JSON.stringify(newMsgCopy) === JSON.stringify(existingMsgCopy)) {
+          return true; // Найден дубликат
+        }
+      } catch (parseError) {
+        // Игнорируем ошибки парсинга
+        return false;
+      }
+
       return false; // Дубликат не найден
     } catch (error) {
       console.error(
@@ -118,7 +120,10 @@ export class RedisManager {
       };
 
       // Проверяем на дубликаты за последние 3 секунды
-      const isDuplicate = await this.isDuplicateMessage(key, messageWithTimestamp);
+      const isDuplicate = await this.isDuplicateMessage(
+        key,
+        messageWithTimestamp
+      );
       if (isDuplicate) {
         console.log(
           `⚠️ [MQTT-Receiver] Duplicate message filtered for ${portnumName}:${deviceId}`
@@ -154,39 +159,64 @@ export class RedisManager {
       // Читаем существующие данные
       const existingData = await this.redis.hgetall(key);
 
-      // Проверяем дубликаты для обновлений с координатами или именами
+      // Проверяем дубликаты - если данные не изменились за последние 3 секунды, не записываем
       if (Object.keys(existingData).length > 0 && existingData.s_time) {
         const lastUpdateTime = parseInt(existingData.s_time);
         const timeDiff = currentTime - lastUpdateTime;
-        
+
         // Если последнее обновление было меньше 3 секунд назад
         if (timeDiff >= 0 && timeDiff < 3000) {
-          // Проверяем, являются ли данные идентичными
-          let isDuplicate = true;
-          
+          let hasChanges = false;
+
           // Проверяем координаты
-          if (updateData.longitude !== undefined && updateData.latitude !== undefined) {
+          if (
+            updateData.longitude !== undefined &&
+            updateData.latitude !== undefined
+          ) {
             const existingLon = parseFloat(existingData.longitude) || 0;
             const existingLat = parseFloat(existingData.latitude) || 0;
-            if (existingLon !== updateData.longitude || existingLat !== updateData.latitude) {
-              isDuplicate = false;
+
+            // Если координаты изменились - есть изменения
+            if (
+              existingLon !== updateData.longitude ||
+              existingLat !== updateData.latitude
+            ) {
+              hasChanges = true;
             }
           }
-          
+
           // Проверяем имена
-          if (updateData.longName !== undefined || updateData.shortName !== undefined) {
-            const newLongName = updateData.longName !== undefined ? updateData.longName : existingData.longName || "";
-            const newShortName = updateData.shortName !== undefined ? updateData.shortName : existingData.shortName || "";
-            
-            if (newLongName !== (existingData.longName || "") || newShortName !== (existingData.shortName || "")) {
-              isDuplicate = false;
+          if (
+            updateData.longName !== undefined ||
+            updateData.shortName !== undefined
+          ) {
+            const newLongName =
+              updateData.longName !== undefined
+                ? updateData.longName
+                : existingData.longName || "";
+            const newShortName =
+              updateData.shortName !== undefined
+                ? updateData.shortName
+                : existingData.shortName || "";
+
+            // Если имена изменились - есть изменения
+            if (
+              newLongName !== (existingData.longName || "") ||
+              newShortName !== (existingData.shortName || "")
+            ) {
+              hasChanges = true;
             }
           }
-          
-          // Если данные идентичны и пришли менее чем через 3 секунды, пропускаем
-          if (isDuplicate && (updateData.longitude !== undefined || updateData.longName !== undefined)) {
+
+          // Если нет изменений за последние 3 секунды - пропускаем запись
+          if (
+            !hasChanges &&
+            (updateData.longitude !== undefined ||
+              updateData.longName !== undefined ||
+              updateData.shortName !== undefined)
+          ) {
             console.log(
-              `⚠️ [MQTT-Receiver] Duplicate dot data filtered for device ${deviceId}`
+              `⚠️ [MQTT-Receiver] No changes in dot data for device ${deviceId} within 3 seconds, skipping`
             );
             return;
           }
