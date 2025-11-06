@@ -44,29 +44,94 @@ export class RedisManager {
   }
 
   /**
-   * Проверяет и помечает сообщение как обработанное для дедупликации
-   * @param {string} messageKey - Уникальный ключ сообщения
-   * @param {number} ttl - Время жизни в секундах (по умолчанию 3)
-   * @returns {boolean} - true если сообщение новое, false если уже было обработано
+   * Проверяет дубликаты сообщений за последние N секунд
+   * @param {string} key - Ключ Redis
+   * @param {Object} newData - Новые данные для проверки
+   * @param {number} timeWindowSeconds - Окно времени в секундах (по умолчанию 3)
+   * @returns {boolean} - true если дубликат найден
    */
-  async checkAndMarkMessageProcessed(messageKey, ttl = 3) {
+  async isDuplicateMessage(key, newData, timeWindowSeconds = 3) {
     try {
-      const dedupeKey = `dedupe:${messageKey}`;
+      const currentTime = Date.now();
+      const timeWindow = timeWindowSeconds * 1000;
 
-      // Пытаемся установить ключ с NX (только если не существует)
-      const result = await this.redis.set(dedupeKey, "1", "EX", ttl, "NX");
+      // Получаем последние несколько сообщений для проверки
+      const recentMessages = await this.redis.lrange(key, -10, -1);
+      
+      // Поля, которые нужно исключить из сравнения (они меняются на каждом шлюзе)
+      const excludeFields = ['timestamp', 'server', 'gatewayId', 'rxSnr', 'rxRssi', 'hopLimit', 'rxTime'];
 
-      // Если результат OK, то ключ был установлен (сообщение новое)
-      // Если результат null, то ключ уже существует (дубликат)
-      return result === "OK";
+      for (const msgStr of recentMessages) {
+        try {
+          const existingMsg = JSON.parse(msgStr);
+          
+          // Проверяем временное окно (только последние 3 секунды)
+          if (currentTime - existingMsg.timestamp > timeWindow) {
+            continue;
+          }
+
+          // Сравниваем данные, исключая специфичные для шлюза поля
+          const newDataFiltered = this._filterObjectFields(newData, excludeFields);
+          const existingDataFiltered = this._filterObjectFields(existingMsg, excludeFields);
+
+          if (this._deepEqual(newDataFiltered, existingDataFiltered)) {
+            return true; // Дубликат найден
+          }
+        } catch (parseError) {
+          continue; // Пропускаем некорректные записи
+        }
+      }
+
+      return false; // Дубликатов не найдено
     } catch (error) {
       console.error(
-        "[MQTT-Receiver] Error in checkAndMarkMessageProcessed:",
+        "[MQTT-Receiver] Error checking duplicate message:",
         error.message
       );
-      // В случае ошибки возвращаем true, чтобы не потерять сообщение
-      return true;
+      return false; // В случае ошибки разрешаем запись
     }
+  }
+
+  /**
+   * Фильтрует поля объекта
+   * @param {Object} obj - Исходный объект
+   * @param {Array} fieldsToExclude - Массив полей для исключения
+   * @returns {Object} - Отфильтрованный объект
+   */
+  _filterObjectFields(obj, fieldsToExclude) {
+    const filtered = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (!fieldsToExclude.includes(key)) {
+        filtered[key] = value;
+      }
+    }
+    return filtered;
+  }
+
+  /**
+   * Глубокое сравнение объектов
+   * @param {*} obj1 - Первый объект
+   * @param {*} obj2 - Второй объект
+   * @returns {boolean} - true если объекты идентичны
+   */
+  _deepEqual(obj1, obj2) {
+    if (obj1 === obj2) return true;
+    
+    if (typeof obj1 !== 'object' || typeof obj2 !== 'object' || obj1 === null || obj2 === null) {
+      return false;
+    }
+
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+
+    if (keys1.length !== keys2.length) return false;
+
+    for (const key of keys1) {
+      if (!keys2.includes(key)) return false;
+      if (!this._deepEqual(obj1[key], obj2[key])) return false;
+    }
+
+    return true;
   }
 
   /**
@@ -83,25 +148,18 @@ export class RedisManager {
         return;
       }
 
-      // Создаем уникальный ключ для дедупликации
-      // Используем from + rxTime + portnum для идентификации
-      const rxTime = messageData.rxTime || Date.now();
-      const dedupeKey = `portnum:${deviceId}:${portnum}:${rxTime}`;
-
-      // Проверяем, не было ли уже обработано это сообщение
-      const isNew = await this.checkAndMarkMessageProcessed(dedupeKey);
-      if (!isNew) {
-        console.log(
-          `🔄 [MQTT-Receiver] Дубликат portnum сообщения пропущен: ${portnumName}:${deviceId}`
-        );
-        return;
-      }
-
       const key = `${portnumName}:${deviceId}`;
       const messageWithTimestamp = {
         timestamp: Date.now(),
         ...messageData,
       };
+
+      // Проверяем на дубликаты за последние 3 секунды
+      const isDuplicate = await this.isDuplicateMessage(key, messageWithTimestamp, 3);
+      if (isDuplicate) {
+        // console.log(`🔄 [MQTT-Receiver] Дубликат сообщения ${portnumName}:${deviceId}, пропускаем`);
+        return;
+      }
 
       // Добавляем сообщение в список
       await this.redis.rpush(key, JSON.stringify(messageWithTimestamp));
@@ -117,6 +175,66 @@ export class RedisManager {
   }
 
   /**
+   * Проверяет дубликаты обновлений точек за последние N секунд
+   * @param {Object} existingData - Существующие данные из Redis
+   * @param {Object} newData - Новые данные для сравнения
+   * @param {number} timeWindowSeconds - Окно времени в секундах (по умолчанию 3)
+   * @returns {boolean} - true если дубликат найден
+   */
+  _isDuplicateDotUpdate(existingData, newData, timeWindowSeconds = 3) {
+    try {
+      // Если нет существующих данных, то это не дубликат
+      if (!existingData || Object.keys(existingData).length === 0) {
+        return false;
+      }
+
+      // Проверяем временное окно
+      const existingTime = parseInt(existingData.s_time) || 0;
+      const currentTime = Date.now();
+      const timeWindow = timeWindowSeconds * 1000;
+
+      if (currentTime - existingTime > timeWindow) {
+        return false; // Данные слишком старые, не дубликат
+      }
+
+      // Поля для сравнения (исключаем s_time и mqtt, так как они могут меняться)
+      const compareFields = ['longitude', 'latitude', 'longName', 'shortName'];
+      
+      // Сравниваем только значимые поля
+      for (const field of compareFields) {
+        const existingValue = existingData[field];
+        const newValue = newData[field];
+        
+        // Если хотя бы одно поле отличается, это не дубликат
+        if (existingValue !== undefined && newValue !== undefined) {
+          // Для чисел сравниваем как числа
+          if (field === 'longitude' || field === 'latitude') {
+            const existingNum = parseFloat(existingValue) || 0;
+            const newNum = parseFloat(newValue) || 0;
+            if (existingNum !== newNum) {
+              return false;
+            }
+          } else {
+            // Для строк сравниваем как строки
+            if (String(existingValue) !== String(newValue)) {
+              return false;
+            }
+          }
+        }
+      }
+
+      // Все значимые поля совпадают - это дубликат
+      return true;
+    } catch (error) {
+      console.error(
+        "[MQTT-Receiver] Error checking duplicate dot update:",
+        error.message
+      );
+      return false; // В случае ошибки разрешаем запись
+    }
+  }
+
+  /**
    * Обновляет данные точки для карты
    * @param {string} deviceId - ID устройства (numeric)
    * @param {Object} updateData - Данные для обновления
@@ -125,40 +243,6 @@ export class RedisManager {
   async updateDotData(deviceId, updateData, options = {}) {
     const { portnum = "UNKNOWN" } = options;
     try {
-      // Создаем уникальный ключ для дедупликации на основе типа обновления и данных
-      let dedupeKey = `dot:${deviceId}:`;
-
-      if (
-        updateData.longitude !== undefined &&
-        updateData.latitude !== undefined
-      ) {
-        // Для координат округляем до 6 знаков для дедупликации
-        const lat = Math.round(updateData.latitude * 1000000);
-        const lon = Math.round(updateData.longitude * 1000000);
-        dedupeKey += `pos:${lat}:${lon}`;
-      } else if (
-        updateData.longName !== undefined ||
-        updateData.shortName !== undefined
-      ) {
-        // Для имен используем сами имена
-        dedupeKey += `name:${updateData.longName || ""}:${
-          updateData.shortName || ""
-        }`;
-      } else {
-        // Для обновления только времени используем текущее время с точностью до секунды
-        const timeKey = Math.floor(Date.now() / 1000);
-        dedupeKey += `time:${timeKey}`;
-      }
-
-      // Проверяем, не было ли уже обработано это обновление
-      const isNew = await this.checkAndMarkMessageProcessed(dedupeKey);
-      if (!isNew) {
-        console.log(
-          `🔄 [MQTT-Receiver] Дубликат dot обновления пропущен: ${deviceId}`
-        );
-        return;
-      }
-
       const key = `dots:${deviceId}`;
       const currentTime = Date.now();
 
@@ -229,6 +313,19 @@ export class RedisManager {
             await this.removeFromPortnumIndex(deviceId, portnum);
           }
         }
+        return;
+      }
+
+      // Проверяем на дубликат обновления за последние 3 секунды
+      // Проверяем только если есть значимые данные для обновления (не просто s_time)
+      const hasSignificantUpdate = 
+        fieldsToUpdate.longitude !== undefined ||
+        fieldsToUpdate.latitude !== undefined ||
+        fieldsToUpdate.longName !== undefined ||
+        fieldsToUpdate.shortName !== undefined;
+
+      if (hasSignificantUpdate && this._isDuplicateDotUpdate(existingData, dotData, 3)) {
+        // console.log(`🔄 [MQTT-Receiver] Дубликат обновления dots:${deviceId}, пропускаем`);
         return;
       }
 

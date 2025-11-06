@@ -1336,7 +1336,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       }
     }
 
-    let message = `💬 <b>Msg:</b> ${escapeHtml(messageText)}`;
+    let message = `💬: ${escapeHtml(messageText)}`;
 
     // Get sender info using event.from (actual sender), not event.gatewayId (receiver gateway)
     const senderId = event.from
@@ -1363,7 +1363,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
     }
 
-    message += `\n\n<blockquote expandable>📡 Получено шлюзами (${gateways.length}):\n`;
+    message += `\n<blockquote expandable>📡 Получено шлюзами (${gateways.length}):\n`;
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
       message += `📡 ${escapeHtml(
