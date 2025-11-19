@@ -1,7 +1,7 @@
 import { Telegraf } from "telegraf";
 import { botSettings } from "../config.mjs";
 
-const MESSAGE_GROUP_TIMEOUT = 10 * 1000;
+const MESSAGE_GROUP_TIMEOUT = 15 * 1000;
 
 // Helper function to format hop count
 const formatHopCount = (hop) => {
@@ -585,7 +585,7 @@ const formatDeviceStats = async (stats, redis) => {
 
   // Last messages section
   if (lastMessages?.length > 0) {
-    message += `📡 <b>Последние сообщения:</b>\n`;
+    message += `💬 <b>Последние сообщения:</b>\n`;
     // Показываем только одно последнее сообщение
     const lastMsg = lastMessages[lastMessages.length - 1];
     const timeAgo = formatTimeAgo(
@@ -1336,7 +1336,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       }
     }
 
-    let message = `💬: ${escapeHtml(messageText)}`;
+    let message = `${escapeHtml(messageText)}`;
 
     // Get sender info using event.from (actual sender), not event.gatewayId (receiver gateway)
     const senderId = event.from
@@ -1351,19 +1351,17 @@ const sendGroupedMessage = async (redis, messageId) => {
 
     if (senderInfo) {
       const deviceIdForUrl = senderId ? senderId.substring(1) : "";
-      message += `\n👤 <b>От:</b> ${escapeHtml(
-        senderInfo.longName
-      )} (${escapeHtml(
+      message += ` (<b></b> ${escapeHtml(senderInfo.longName)} (${escapeHtml(
         senderId
-      )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
+      )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>)`;
     } else if (senderId) {
       const deviceIdForUrl = senderId ? senderId.substring(1) : "";
-      message += `\n👤 <b>От:</b> Unknown (${escapeHtml(
+      message += ` (<b></b> Ноунейм) (${escapeHtml(
         senderId
       )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
     }
 
-    message += `\n<blockquote expandable>Получено шлюзами (${gateways.length}):\n`;
+    message += `\n\n<blockquote expandable>Получено шлюзами <b>(${gateways.length}):</b>\n`;
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
       message += `📡 ${escapeHtml(
