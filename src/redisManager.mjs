@@ -719,11 +719,91 @@ export class RedisManager {
   }
 
   /**
+   * Получает данные для карты в минимальном формате (только координаты и время)
+   * @returns {Object} - Объект с данными точек в минимальном формате
+   */
+  async getMapData() {
+    try {
+      const startTime = Date.now();
+
+      // Проверяем кэш
+      const cacheKey = "map_data_cache";
+      const cached = await this.redis.get(cacheKey);
+
+      if (cached) {
+        const duration = Date.now() - startTime;
+        console.log(`[HTTP-API] Cached map data retrieved in ${duration}ms`);
+        return JSON.parse(cached);
+      }
+
+      // Используем SCAN для получения ключей
+      const deviceIds = await this.getActiveDeviceIds();
+
+      if (deviceIds.length === 0) {
+        return {};
+      }
+
+      // Используем pipeline для массовых операций - только необходимые поля
+      const pipeline = this.redis.pipeline();
+
+      deviceIds.forEach((deviceId) => {
+        pipeline.hmget(
+          `dots:${deviceId}`,
+          "longitude",
+          "latitude",
+          "s_time"
+        );
+      });
+
+      const results = await pipeline.exec();
+      const mapData = {};
+
+      // Обрабатываем результаты pipeline
+      results.forEach(([err, values], index) => {
+        if (err) {
+          console.error(
+            `Error getting map data for device ${deviceIds[index]}:`,
+            err
+          );
+          return;
+        }
+
+        const [longitude, latitude, s_time] = values;
+
+        // Проверяем, что есть координаты (обязательно для карты)
+        if (longitude && latitude) {
+          mapData[deviceIds[index]] = {
+            lon: parseFloat(longitude),
+            lat: parseFloat(latitude),
+            t: s_time ? parseInt(s_time) : 0,
+          };
+        }
+      });
+
+      // Кэшируем результат на 30 секунд
+      await this.redis.setex(cacheKey, 30, JSON.stringify(mapData));
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `[HTTP-API] Map data retrieved in ${duration}ms for ${
+          Object.keys(mapData).length
+        } devices`
+      );
+
+      return mapData;
+    } catch (error) {
+      console.error("Error getting map data:", error.message);
+      return {};
+    }
+  }
+
+  /**
    * Инвалидирует кэш оптимизированных данных точек
    */
   async invalidateDotsCache() {
     try {
       await this.redis.del("optimized_dots_cache");
+      await this.redis.del("map_data_cache"); // Также инвалидируем кэш карты
       console.log("[HTTP-API] Dots cache invalidated");
     } catch (error) {
       console.error("[HTTP-API] Error invalidating dots cache:", error.message);

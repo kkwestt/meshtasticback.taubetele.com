@@ -1,6 +1,6 @@
 // Импортируем модули для HTTP API и Telegram
 import { redisConfig, serverConfig, adminConfig } from "../config.mjs";
-import { RedisManager } from "./redisManager.mjs";
+import { RedisManager } from "./shared/redisManager.mjs";
 import { HTTPServer } from "./httpServer.mjs";
 
 /**
@@ -54,7 +54,7 @@ class MeshtasticApiService {
    */
   async initializeRedis() {
     try {
-      this.redisManager = new RedisManager(redisConfig);
+      this.redisManager = new RedisManager(redisConfig, "HTTP-API");
       await this.redisManager.ping();
 
       console.log("✅ [HTTP-API] Redis подключен и настроен");

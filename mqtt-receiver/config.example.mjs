@@ -59,7 +59,8 @@ export const redisConfig = {
   maxRetriesPerRequest: null,
   lazyConnect: true, // Для лучшей работы с контейнерами
   connectTimeout: 10000, // 10 секунд
-  commandTimeout: 5000, // 5 секунд
+  // Примечание: ioredis не поддерживает commandTimeout напрямую
+  // Таймауты обрабатываются на уровне приложения
   ttl: 60 * 60 * 3, // 3 hours in seconds
 };
 

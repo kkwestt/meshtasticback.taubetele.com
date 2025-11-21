@@ -11,8 +11,9 @@ import {
   botSettings,
 } from "../config.mjs";
 import { MQTTManager } from "./mqtt.mjs";
-import { RedisManager } from "./redisManager.mjs";
+import { RedisManager } from "../../src/shared/redisManager.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
+import { MessageQueue } from "../../src/shared/messageQueue.mjs";
 import {
   shouldLogError,
   bufferToHex,
@@ -27,6 +28,10 @@ import {
   isValidUserName,
   CONSTANTS,
 } from "./utils.mjs";
+import {
+  isValidPacket as isValidPacketOptimized,
+  isValidUserName as isValidUserNameOptimized,
+} from "../../src/shared/validators.mjs";
 import {
   initializeTelegramBot,
   handleTelegramMessage,
@@ -50,6 +55,26 @@ class MqttReceiver {
     this.redisManager = null;
     this.protoTypes = {};
     this.protobufDecoder = new ProtobufDecoder();
+    // Инициализируем очередь для асинхронной обработки сообщений
+    this.messageQueue = new MessageQueue({ concurrency: 10 });
+    this._setupMessageQueueHandlers();
+  }
+
+  /**
+   * Настраивает обработчики для очереди сообщений
+   */
+  _setupMessageQueueHandlers() {
+    // Обработчик для всех типов сообщений
+    this.messageQueue.addHandler("default", async (data) => {
+      return await this.processEventInternal(
+        data.server,
+        data.fullTopic,
+        data.user,
+        data.eventName,
+        data.eventType,
+        data.event
+      );
+    });
   }
 
   /**
@@ -140,7 +165,7 @@ class MqttReceiver {
    */
   async initializeRedis() {
     try {
-      this.redisManager = new RedisManager(redisConfig);
+      this.redisManager = new RedisManager(redisConfig, "MQTT-Receiver");
       await this.redisManager.ping();
 
       console.log("✅ [MQTT-Receiver] Redis подключен и настроен");
@@ -255,8 +280,8 @@ class MqttReceiver {
    */
   handleProtobufMessage(server, fullTopic, user, arrayBuffer) {
     try {
-      // Валидация пакета
-      if (!isValidPacket(arrayBuffer)) {
+      // Валидация пакета (используем оптимизированную версию)
+      if (!isValidPacketOptimized(arrayBuffer)) {
         arrayBuffer = null;
         return;
       }
@@ -418,9 +443,38 @@ class MqttReceiver {
   }
 
   /**
-   * Основная функция обработки событий
+   * Основная функция обработки событий (добавляет в очередь)
    */
   async processEvent(server, fullTopic, user, eventName, eventType, event) {
+    // Добавляем сообщение в очередь для асинхронной обработки
+    try {
+      await this.messageQueue.enqueue("default", {
+        server,
+        fullTopic,
+        user,
+        eventName,
+        eventType,
+        event,
+      });
+    } catch (error) {
+      console.error(
+        "❌ [MQTT-Receiver] Ошибка добавления в очередь:",
+        error.message
+      );
+    }
+  }
+
+  /**
+   * Внутренняя функция обработки событий (вызывается из очереди)
+   */
+  async processEventInternal(
+    server,
+    fullTopic,
+    user,
+    eventName,
+    eventType,
+    event
+  ) {
     try {
       const { from } = event;
       if (!from) {
@@ -540,9 +594,9 @@ class MqttReceiver {
         const shortName = decodedData.short_name || decodedData.shortName;
 
         const validLongName =
-          longName && isValidUserName(longName) ? longName : "";
+          longName && isValidUserNameOptimized(longName) ? longName : "";
         const validShortName =
-          shortName && isValidUserName(shortName) ? shortName : "";
+          shortName && isValidUserNameOptimized(shortName) ? shortName : "";
 
         if (validLongName || validShortName) {
           await this.redisManager.updateDotData(
@@ -680,6 +734,9 @@ class MqttReceiver {
           "✅ [MQTT-Receiver] Интервал мониторинга производительности остановлен"
         );
       }
+
+      // Ожидаем завершения обработки всех сообщений в очереди
+      await this.messageQueue.drain();
 
       await this.mqttManager.disconnect();
 

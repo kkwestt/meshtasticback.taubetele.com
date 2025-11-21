@@ -6,18 +6,18 @@ services:
     image: redis:8-alpine
     container_name: meshtastic_redis
     restart: unless-stopped
-    command: redis-server --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000
-    #command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000
-    environment:
-      - REDIS_DISABLE_MEMORY_WARNING=1
+    # maxmemory 4gb - лимит после загрузки данных (политика allkeys-lru удалит старые данные при превышении)
+    # mem_limit 5gb - лимит контейнера (больше maxmemory для загрузки RDB файла)
+    command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000
+    # environment:
+    #   - REDIS_DISABLE_MEMORY_WARNING=1
     ports:
       - "6379:6379"
     volumes:
       - /volume2/docker/meshtastic_redis:/data
     networks:
       - meshtastic_network
-    #mem_limit: 768m
-    #mem_reservation: 256m
+    mem_limit: 5g
 
   # MQTT Receiver сервис (приём и обработка MQTT данных)
   mqtt-receiver:
@@ -42,6 +42,7 @@ services:
       - ./protobufs:/app/protobufs:ro
     networks:
       - meshtastic_network
+    mem_limit: 1g
 
   # Основной сервис (HTTP API и Telegram бот)
   meshtasticback_taubetele_com_81:
@@ -59,8 +60,8 @@ services:
       - PORT=3000
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # Ограничиваем память для Node.js до 1.5GB (меньше, чем раньше)
-      - NODE_OPTIONS=--max-old-space-size=1536
+      # Ограничиваем память для Node.js до 1GB
+      - NODE_OPTIONS=--max-old-space-size=1600
     # Ограничиваем ресурсы контейнера
     mem_limit: 2g
     mem_reservation: 512m
