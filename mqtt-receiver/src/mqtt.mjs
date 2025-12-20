@@ -163,6 +163,7 @@ export class MQTTManager {
       "msh/+/+/+/2/e/+/+",
       "msh/+/+/+/+/2/map/",
       "msh/+/+/+/+/2/e/+/+",
+      "meshcore/+/+/packets",
     ];
   }
 

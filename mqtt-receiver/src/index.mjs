@@ -266,10 +266,33 @@ class MqttReceiver {
     try {
       // Парсим топик
       const topicParts = topic.split("/");
+      console.log(
+        `🔍 [MQTT-Receiver] [${server.name}] Топик: ${topic}, части: [${topicParts.join(", ")}]`
+      );
+      
       if (topicParts.length < 3) {
         console.log(
           `⚠️ [MQTT-Receiver] [${server.name}] Неверный формат топика: ${topic}`
         );
+        return;
+      }
+
+      // Проверяем, является ли это пакетом от meshcore
+      // Формат: meshcore/<region>/<gateway_id>/packets
+      // topicParts[0] = "meshcore", topicParts[last] = "packets"
+      if (topicParts[0] === "meshcore" && topicParts[topicParts.length - 1] === "packets") {
+        // Формат: meshcore/<region>/<gateway_id>/packets
+        console.log(
+          `📨 [MQTT-Receiver] [${server.name}] Получен meshcore пакет из топика: ${topic}`
+        );
+        // Вызываем асинхронно, не блокируя обработку других сообщений
+        this.handleMeshcoreJsonMessage(server, topic, payload).catch((error) => {
+          console.error(
+            `❌ [MQTT-Receiver] [${server.name}] Ошибка обработки meshcore:`,
+            error.message,
+            error.stack
+          );
+        });
         return;
       }
 
@@ -316,6 +339,156 @@ class MqttReceiver {
       console.error(
         `❌ [MQTT-Receiver] [${server.name}] Ошибка парсинга JSON:`,
         parseError.message
+      );
+    }
+  }
+
+  /**
+   * Обрабатывает JSON сообщения от meshcore
+   */
+  async handleMeshcoreJsonMessage(server, topic, payload) {
+    try {
+      console.log(
+        `🔍 [MQTT-Receiver] [${server.name}] Начало обработки meshcore пакета`
+      );
+      
+      const payloadString = payload.toString();
+      console.log(
+        `📄 [MQTT-Receiver] [${server.name}] Payload длина: ${payloadString.length}`
+      );
+      
+      const jsonData = JSON.parse(payloadString);
+      console.log(
+        `✅ [MQTT-Receiver] [${server.name}] JSON распарсен, origin_id: ${jsonData.origin_id || "отсутствует"}`
+      );
+      
+      // Извлекаем базовые данные из JSON
+      const origin = jsonData.origin || "";
+      const originId = jsonData.origin_id || "";
+      const sTime = jsonData.timestamp 
+        ? new Date(jsonData.timestamp).getTime() 
+        : Date.now();
+
+      if (!originId) {
+        console.log(`⚠️ [MQTT-Receiver] [${server.name}] Нет origin_id в пакете meshcore`);
+        return;
+      }
+
+      console.log(
+        `📊 [MQTT-Receiver] [${server.name}] Извлечены данные: origin=${origin}, origin_id=${originId}, s_time=${sTime}`
+      );
+
+      // Инициализируем данные для сохранения
+      let lat = null;
+      let lon = null;
+
+      // Если есть raw данные, декодируем protobuf для извлечения координат
+      if (jsonData.raw) {
+        try {
+          const rawBuffer = Buffer.from(jsonData.raw, 'hex');
+          
+          // Декодируем ServiceEnvelope
+          const serviceEnvelope = this.protoTypes.ServiceEnvelope.decode(
+            new Uint8Array(rawBuffer)
+          );
+
+          if (serviceEnvelope?.packet) {
+            const meshPacket = serviceEnvelope.packet;
+
+            // Если пакет декодирован, извлекаем координаты
+            if (meshPacket.decoded) {
+              const portnum = meshPacket.decoded.portnum;
+              
+              // Если это пакет с позицией (POSITION_APP = 3)
+              if (portnum === 3 && meshPacket.decoded.payload) {
+                try {
+                  const positionBuffer = Buffer.from(meshPacket.decoded.payload);
+                  const position = this.protoTypes.Position.decode(positionBuffer);
+                  
+                  if (position.latitude_i && position.longitude_i) {
+                    lat = position.latitude_i / 1e7;
+                    lon = position.longitude_i / 1e7;
+                  }
+                } catch (posError) {
+                  // Игнорируем ошибки декодирования позиции
+                }
+              }
+            }
+            // Если пакет зашифрован, пытаемся расшифровать
+            else if (meshPacket.encrypted?.length > 0) {
+              try {
+                const decrypted = this.decrypt(meshPacket);
+                if (decrypted) {
+                  const portnum = decrypted.portnum;
+                  
+                  // Если это пакет с позицией (POSITION_APP = 3)
+                  if (portnum === 3 && decrypted.payload) {
+                    try {
+                      const positionBuffer = Buffer.from(decrypted.payload);
+                      const position = this.protoTypes.Position.decode(positionBuffer);
+                      
+                      if (position.latitude_i && position.longitude_i) {
+                        lat = position.latitude_i / 1e7;
+                        lon = position.longitude_i / 1e7;
+                      }
+                    } catch (posError) {
+                      // Игнорируем ошибки декодирования позиции
+                    }
+                  }
+                }
+              } catch (decryptError) {
+                // Игнорируем ошибки расшифровки
+              }
+            }
+
+            // Также обрабатываем как обычный protobuf пакет для совместимости
+            this.handleProtobufMessage(
+              server,
+              topic,
+              null,
+              new Uint8Array(rawBuffer)
+            );
+          }
+        } catch (decodeError) {
+          // Если не удалось декодировать, все равно сохраняем базовые данные
+          console.log(
+            `⚠️ [MQTT-Receiver] [${server.name}] Ошибка декодирования protobuf в meshcore:`,
+            decodeError.message
+          );
+        }
+      }
+
+      // Сохраняем данные meshcore в Redis
+      const meshcoreData = {
+        origin,
+        origin_id: originId,
+        lat,
+        lon,
+        s_time: sTime,
+      };
+
+      console.log(
+        `💾 [MQTT-Receiver] [${server.name}] Сохранение в Redis для ${originId}...`
+      );
+
+      await this.redisManager.saveMeshcoreDot(originId, meshcoreData);
+
+      // Логируем для отладки
+      console.log(
+        `✅ [MQTT-Receiver] [${server.name}] Сохранены данные meshcore для ${originId}:`,
+        JSON.stringify({
+          origin,
+          origin_id: originId,
+          lat: lat !== null ? lat.toFixed(7) : null,
+          lon: lon !== null ? lon.toFixed(7) : null,
+          s_time: new Date(sTime).toISOString(),
+        })
+      );
+    } catch (parseError) {
+      console.error(
+        `❌ [MQTT-Receiver] [${server.name}] Ошибка парсинга meshcore JSON:`,
+        parseError.message,
+        parseError.stack
       );
     }
   }

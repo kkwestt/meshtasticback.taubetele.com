@@ -501,6 +501,57 @@ export class RedisManager {
       return [];
     }
   }
+
+  /**
+   * Сохраняет данные meshcore в отдельный ключ Redis
+   * @param {string} originId - ID источника (origin_id)
+   * @param {Object} data - Данные для сохранения {origin, origin_id, lat, lon, s_time}
+   */
+  async saveMeshcoreDot(originId, data) {
+    try {
+      const key = `dots_meshcore:${originId}`;
+      const currentTime = Date.now();
+
+      console.log(
+        `🔧 [MQTT-Receiver] Redis: Сохранение в ключ ${key}`
+      );
+
+      // Подготавливаем данные для сохранения (Redis hash требует строковые значения)
+      const dotData = {
+        origin: String(data.origin || ""),
+        origin_id: String(data.origin_id || originId),
+        lat: data.lat !== undefined && data.lat !== null ? String(data.lat) : "",
+        lon: data.lon !== undefined && data.lon !== null ? String(data.lon) : "",
+        s_time: String(data.s_time || currentTime),
+      };
+
+      console.log(
+        `🔧 [MQTT-Receiver] Redis: Данные для сохранения:`,
+        JSON.stringify(dotData)
+      );
+
+      // Сохраняем как hash в Redis
+      const result = await this.redis.hset(key, dotData);
+      console.log(`🔧 [MQTT-Receiver] Redis: hset результат: ${result}`);
+
+      // Устанавливаем TTL (время жизни ключа) - 3 часа
+      const expireResult = await this.redis.expire(key, DEVICE_EXPIRY_TIME);
+      console.log(`🔧 [MQTT-Receiver] Redis: expire результат: ${expireResult}`);
+
+      // Проверяем, что данные сохранились
+      const savedData = await this.redis.hgetall(key);
+      console.log(
+        `✅ [MQTT-Receiver] Redis: Проверка сохраненных данных для ${key}:`,
+        JSON.stringify(savedData)
+      );
+    } catch (error) {
+      console.error(
+        `❌ [MQTT-Receiver] Error saving meshcore dot for ${originId}:`,
+        error.message,
+        error.stack
+      );
+    }
+  }
 }
 
 export default RedisManager;
