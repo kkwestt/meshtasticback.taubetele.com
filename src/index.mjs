@@ -53,14 +53,62 @@ class MeshtasticApiService {
    * Инициализирует Redis Manager (только для чтения)
    */
   async initializeRedis() {
-    try {
-      this.redisManager = new RedisManager(redisConfig, "HTTP-API");
-      await this.redisManager.ping();
+    const retryDelay = 10000; // 10 секунд между попытками
+    let attempt = 0;
 
-      console.log("✅ [HTTP-API] Redis подключен и настроен");
-    } catch (error) {
-      console.error("❌ [HTTP-API] Ошибка подключения к Redis:", error.message);
-      throw error;
+    console.log("🔄 [HTTP-API] Подключение к Redis...");
+
+    while (true) {
+      attempt++;
+      try {
+        // Закрываем предыдущее соединение, если оно было создано
+        if (this.redisManager && this.redisManager.redis) {
+          try {
+            await this.redisManager.disconnect();
+          } catch (e) {
+            // Игнорируем ошибки при закрытии
+          }
+        }
+
+        this.redisManager = new RedisManager(redisConfig, "HTTP-API");
+        await this.redisManager.ping();
+
+        console.log(
+          `✅ [HTTP-API] Redis подключен и настроен (попытка ${attempt})`
+        );
+        return; // Успешно подключились, выходим
+      } catch (error) {
+        const isLoadingError =
+          error.message &&
+          (error.message.includes("LOADING") ||
+            error.message.includes("loading the dataset"));
+
+        if (isLoadingError) {
+          if (attempt === 1) {
+            console.log(
+              `⏳ [HTTP-API] Redis загружает данные в память, ожидание готовности...`
+            );
+          }
+          // Логируем каждые 6 попыток (каждую минуту)
+          if (attempt % 6 === 0) {
+            console.log(
+              `⏳ [HTTP-API] Все еще ожидание загрузки Redis... (попытка ${attempt}, прошло ~${Math.round(
+                (attempt * retryDelay) / 60000
+              )} минут)`
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          continue; // Пробуем снова
+        }
+
+        // Если это не ошибка загрузки, логируем и пробуем снова
+        console.error(
+          `❌ [HTTP-API] Ошибка подключения к Redis (попытка ${attempt}):`,
+          error.message
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        continue; // Пробуем снова
+      }
     }
   }
 

@@ -11,9 +11,9 @@ import {
   botSettings,
 } from "../config.mjs";
 import { MQTTManager } from "./mqtt.mjs";
-import { RedisManager } from "../../src/shared/redisManager.mjs";
+import { RedisManager } from "./shared/redisManager.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
-import { MessageQueue } from "../../src/shared/messageQueue.mjs";
+import { MessageQueue } from "./shared/messageQueue.mjs";
 import {
   shouldLogError,
   bufferToHex,
@@ -31,7 +31,7 @@ import {
 import {
   isValidPacket as isValidPacketOptimized,
   isValidUserName as isValidUserNameOptimized,
-} from "../../src/shared/validators.mjs";
+} from "./shared/validators.mjs";
 import {
   initializeTelegramBot,
   handleTelegramMessage,
@@ -164,17 +164,62 @@ class MqttReceiver {
    * Инициализирует Redis Manager (только для записи)
    */
   async initializeRedis() {
-    try {
-      this.redisManager = new RedisManager(redisConfig, "MQTT-Receiver");
-      await this.redisManager.ping();
+    const retryDelay = 10000; // 10 секунд между попытками
+    let attempt = 0;
 
-      console.log("✅ [MQTT-Receiver] Redis подключен и настроен");
-    } catch (error) {
-      console.error(
-        "❌ [MQTT-Receiver] Ошибка подключения к Redis:",
-        error.message
-      );
-      throw error;
+    console.log("🔄 [MQTT-Receiver] Подключение к Redis...");
+
+    while (true) {
+      attempt++;
+      try {
+        // Закрываем предыдущее соединение, если оно было создано
+        if (this.redisManager && this.redisManager.redis) {
+          try {
+            await this.redisManager.disconnect();
+          } catch (e) {
+            // Игнорируем ошибки при закрытии
+          }
+        }
+
+        this.redisManager = new RedisManager(redisConfig, "MQTT-Receiver");
+        await this.redisManager.ping();
+
+        console.log(
+          `✅ [MQTT-Receiver] Redis подключен и настроен (попытка ${attempt})`
+        );
+        return; // Успешно подключились, выходим
+      } catch (error) {
+        const isLoadingError =
+          error.message &&
+          (error.message.includes("LOADING") ||
+            error.message.includes("loading the dataset"));
+
+        if (isLoadingError) {
+          if (attempt === 1) {
+            console.log(
+              `⏳ [MQTT-Receiver] Redis загружает данные в память, ожидание готовности...`
+            );
+          }
+          // Логируем каждые 6 попыток (каждую минуту)
+          if (attempt % 6 === 0) {
+            console.log(
+              `⏳ [MQTT-Receiver] Все еще ожидание загрузки Redis... (попытка ${attempt}, прошло ~${Math.round(
+                (attempt * retryDelay) / 60000
+              )} минут)`
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          continue; // Пробуем снова
+        }
+
+        // Если это не ошибка загрузки, логируем и пробуем снова
+        console.error(
+          `❌ [MQTT-Receiver] Ошибка подключения к Redis (попытка ${attempt}):`,
+          error.message
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        continue; // Пробуем снова
+      }
     }
   }
 

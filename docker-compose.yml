@@ -22,8 +22,8 @@ services:
   # MQTT Receiver сервис (приём и обработка MQTT данных)
   mqtt-receiver:
     build:
-      context: ./mqtt-receiver
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./mqtt-receiver/Dockerfile
     container_name: meshtastic_mqtt_receiver
     restart: unless-stopped
     depends_on:
