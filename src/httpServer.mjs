@@ -58,16 +58,19 @@ export class HTTPServer {
     this.app.get("/health", this.handleHealthCheck.bind(this));
     this.app.get("/stats", this.handleStatsEndpoint.bind(this));
 
+    // Специфичные статические endpoints ДО ВСЕХ динамических маршрутов
+    // ВАЖНО: эти маршруты должны быть зарегистрированы ПЕРЕД любыми динамическими маршрутами
+    this.app.get("/dots_meshcore", this.handleDotsMeshcoreEndpoint.bind(this));
+    this.app.get("/map", this.handleMapEndpoint.bind(this));
+
     // Dots endpoint - данные для карты (оптимизированный)
     this.app.get("/dots", this.handleDotsEndpoint.bind(this));
     this.app.get("/dots/:deviceId", this.handleSingleDotEndpoint.bind(this));
 
-    // Endpoint для карты в минимальном формате
-    this.app.get("/map", this.handleMapEndpoint.bind(this));
-
-    // Endpoint для формата portnumName:deviceId
+    // Endpoint для формата portnumName:deviceId (должен быть последним среди GET маршрутов)
+    // Используем регулярное выражение, чтобы маршрут срабатывал ТОЛЬКО если есть двоеточие
     this.app.get(
-      "/:portnumNameAndDeviceId",
+      "/:portnumNameAndDeviceId([^/]+:[^/]+)",
       this.handlePortnumColonFormatEndpoint.bind(this)
     );
 
@@ -114,6 +117,7 @@ export class HTTPServer {
             "/dots": "Map data for all devices (optimized format)",
             "/map": "Map data in minimal format (fastest)",
             "/dots/:deviceId": "Map data for specific device",
+            "/dots_meshcore": "Data from Redis key dots_meshcore",
             "/portnum/:portnumName": "All messages by portnum type",
             "/portnum/:portnumName/:deviceId":
               "Device messages by portnum type",
@@ -203,7 +207,10 @@ export class HTTPServer {
   async handlePortnumColonFormatEndpoint(req, res) {
     try {
       const { portnumNameAndDeviceId } = req.params;
-      const [portnumName, deviceId] = portnumNameAndDeviceId.split(":");
+      
+      // Разделяем параметр по двоеточию
+      const parts = portnumNameAndDeviceId.split(":");
+      const [portnumName, deviceId] = parts;
 
       // Валидация portnum
       const validPortnums = [
@@ -370,6 +377,81 @@ export class HTTPServer {
         res,
         `Single dot endpoint (${req.params.deviceId})`
       );
+    }
+  }
+
+  /**
+   * Обрабатывает /dots_meshcore endpoint - возвращает данные из Redis по ключам dots_meshcore:*
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleDotsMeshcoreEndpoint(req, res) {
+    try {
+      const pattern = "dots_meshcore:*";
+      const result = {};
+      
+      // Используем SCAN для поиска всех ключей по паттерну
+      const stream = this.redisManager.redis.scanStream({
+        match: pattern,
+        count: 100,
+      });
+
+      const keys = [];
+      for await (const keyBatch of stream) {
+        keys.push(...keyBatch);
+      }
+
+      if (keys.length === 0) {
+        return res.status(404).json({
+          error: "Data not found",
+          pattern: pattern,
+          message: "No dots_meshcore keys found",
+        });
+      }
+
+      // Получаем данные из всех найденных ключей
+      const pipeline = this.redisManager.redis.pipeline();
+      keys.forEach((key) => {
+        pipeline.hgetall(key);
+      });
+
+      const results = await pipeline.exec();
+      
+      // Обрабатываем результаты и формируем объект
+      results.forEach(([err, hashData], index) => {
+        if (!err && hashData && Object.keys(hashData).length > 0) {
+          const key = keys[index];
+          // Извлекаем deviceId из ключа (dots_meshcore:deviceId)
+          const deviceId = key.replace("dots_meshcore:", "");
+          
+          // Парсим данные из hash
+          const parsedData = {};
+          for (const [field, value] of Object.entries(hashData)) {
+            try {
+              // Пытаемся распарсить как JSON
+              parsedData[field] = JSON.parse(value);
+            } catch {
+              // Если не JSON, пытаемся преобразовать в число
+              if (!isNaN(value) && value !== "") {
+                parsedData[field] = Number(value);
+              } else {
+                parsedData[field] = value;
+              }
+            }
+          }
+          
+          result[deviceId] = parsedData;
+        }
+      });
+
+      res.json({
+        pattern: pattern,
+        timestamp: Date.now(),
+        device_count: Object.keys(result).length,
+        data: result,
+      });
+    } catch (error) {
+      handleEndpointError(error, res, "Dots meshcore endpoint");
     }
   }
 
@@ -652,6 +734,9 @@ export class HTTPServer {
       );
       console.log(
         `    GET /dots/:deviceId          - Map data for specific device`
+      );
+      console.log(
+        `    GET /dots_meshcore           - Data from Redis key dots_meshcore`
       );
       console.log(`    GET /nodes                   - List of all devices`);
       console.log(`  СИСТЕМА:`);

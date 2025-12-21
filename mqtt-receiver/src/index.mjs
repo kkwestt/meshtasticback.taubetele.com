@@ -14,6 +14,7 @@ import { MQTTManager } from "./mqtt.mjs";
 import { RedisManager } from "./shared/redisManager.mjs";
 import { ProtobufDecoder } from "./protobufDecoder.mjs";
 import { MessageQueue } from "./shared/messageQueue.mjs";
+import { decodeMeshcoreRaw, decodeAdvertPacket } from "./meshcoreParser.mjs";
 import {
   shouldLogError,
   bufferToHex,
@@ -266,9 +267,6 @@ class MqttReceiver {
     try {
       // Парсим топик
       const topicParts = topic.split("/");
-      console.log(
-        `🔍 [MQTT-Receiver] [${server.name}] Топик: ${topic}, части: [${topicParts.join(", ")}]`
-      );
       
       if (topicParts.length < 3) {
         console.log(
@@ -282,6 +280,9 @@ class MqttReceiver {
       // topicParts[0] = "meshcore", topicParts[last] = "packets"
       if (topicParts[0] === "meshcore" && topicParts[topicParts.length - 1] === "packets") {
         // Формат: meshcore/<region>/<gateway_id>/packets
+        console.log(
+          `🔍 [MQTT-Receiver] [${server.name}] Топик: ${topic}, части: [${topicParts.join(", ")}]`
+        );
         console.log(
           `📨 [MQTT-Receiver] [${server.name}] Получен meshcore пакет из топика: ${topic}`
         );
@@ -378,109 +379,104 @@ class MqttReceiver {
         `📊 [MQTT-Receiver] [${server.name}] Извлечены данные: origin=${origin}, origin_id=${originId}, s_time=${sTime}`
       );
 
-      // Инициализируем данные для сохранения
+      // Инициализируем данные для сохранения устройства
+      let deviceId = null; // ID устройства (public_key из ADVERT)
       let lat = null;
       let lon = null;
+      let name = null;
 
-      // Если есть raw данные, декодируем protobuf для извлечения координат
+      // Если есть raw данные, декодируем как MeshCore пакет (не protobuf!)
       if (jsonData.raw) {
         try {
-          const rawBuffer = Buffer.from(jsonData.raw, 'hex');
+          // Декодируем MeshCore пакет
+          const meshcorePacket = decodeMeshcoreRaw(jsonData.raw);
           
-          // Декодируем ServiceEnvelope
-          const serviceEnvelope = this.protoTypes.ServiceEnvelope.decode(
-            new Uint8Array(rawBuffer)
-          );
-
-          if (serviceEnvelope?.packet) {
-            const meshPacket = serviceEnvelope.packet;
-
-            // Если пакет декодирован, извлекаем координаты
-            if (meshPacket.decoded) {
-              const portnum = meshPacket.decoded.portnum;
+          if (meshcorePacket) {
+            console.log(
+              `📦 [MQTT-Receiver] [${server.name}] MeshCore пакет: тип=${meshcorePacket.header.payloadType}, маршрут=${meshcorePacket.header.routeType}`
+            );
+            
+            // Если это ADVERT пакет, декодируем его полностью
+            if (meshcorePacket.header.payloadType === "ADVERT") {
+              const advertPacket = decodeAdvertPacket(jsonData.raw);
               
-              // Если это пакет с позицией (POSITION_APP = 3)
-              if (portnum === 3 && meshPacket.decoded.payload) {
-                try {
-                  const positionBuffer = Buffer.from(meshPacket.decoded.payload);
-                  const position = this.protoTypes.Position.decode(positionBuffer);
-                  
-                  if (position.latitude_i && position.longitude_i) {
-                    lat = position.latitude_i / 1e7;
-                    lon = position.longitude_i / 1e7;
-                  }
-                } catch (posError) {
-                  // Игнорируем ошибки декодирования позиции
+              if (advertPacket && advertPacket.advertData) {
+                const advertData = advertPacket.advertData;
+                
+                // Извлекаем ID устройства (public_key) - это основной идентификатор
+                if (advertData.publicKey) {
+                  deviceId = advertData.publicKey;
+                  console.log(
+                    `🔑 [MQTT-Receiver] [${server.name}] ID устройства (public_key): ${deviceId}`
+                  );
+                }
+                
+                // Извлекаем координаты из ADVERT
+                if (advertData.lat !== undefined && advertData.lon !== undefined) {
+                  lat = advertData.lat;
+                  lon = advertData.lon;
+                  console.log(
+                    `📍 [MQTT-Receiver] [${server.name}] Координаты из ADVERT: lat=${lat}, lon=${lon}`
+                  );
+                }
+                
+                // Извлекаем имя из ADVERT
+                if (advertData.name) {
+                  name = advertData.name;
+                  console.log(
+                    `👤 [MQTT-Receiver] [${server.name}] Имя из ADVERT: ${name}`
+                  );
                 }
               }
             }
-            // Если пакет зашифрован, пытаемся расшифровать
-            else if (meshPacket.encrypted?.length > 0) {
-              try {
-                const decrypted = this.decrypt(meshPacket);
-                if (decrypted) {
-                  const portnum = decrypted.portnum;
-                  
-                  // Если это пакет с позицией (POSITION_APP = 3)
-                  if (portnum === 3 && decrypted.payload) {
-                    try {
-                      const positionBuffer = Buffer.from(decrypted.payload);
-                      const position = this.protoTypes.Position.decode(positionBuffer);
-                      
-                      if (position.latitude_i && position.longitude_i) {
-                        lat = position.latitude_i / 1e7;
-                        lon = position.longitude_i / 1e7;
-                      }
-                    } catch (posError) {
-                      // Игнорируем ошибки декодирования позиции
-                    }
-                  }
-                }
-              } catch (decryptError) {
-                // Игнорируем ошибки расшифровки
-              }
-            }
-
-            // Также обрабатываем как обычный protobuf пакет для совместимости
-            this.handleProtobufMessage(
-              server,
-              topic,
-              null,
-              new Uint8Array(rawBuffer)
+          } else {
+            console.log(
+              `⚠️ [MQTT-Receiver] [${server.name}] Не удалось декодировать MeshCore пакет`
             );
           }
         } catch (decodeError) {
-          // Если не удалось декодировать, все равно сохраняем базовые данные
+          // Если не удалось декодировать, не сохраняем данные устройства
           console.log(
-            `⚠️ [MQTT-Receiver] [${server.name}] Ошибка декодирования protobuf в meshcore:`,
+            `⚠️ [MQTT-Receiver] [${server.name}] Ошибка декодирования MeshCore пакета:`,
             decodeError.message
           );
         }
       }
 
-      // Сохраняем данные meshcore в Redis
-      const meshcoreData = {
-        origin,
-        origin_id: originId,
+      // Сохраняем данные устройства только если есть ID устройства (public_key)
+      if (!deviceId) {
+        console.log(
+          `⚠️ [MQTT-Receiver] [${server.name}] Нет ID устройства (public_key) из ADVERT, пропускаем сохранение. Шлюз: origin=${origin}, origin_id=${originId}`
+        );
+        return;
+      }
+
+      // Сохраняем данные устройства: ID устройства, координаты, имя, информация о шлюзе
+      const deviceData = {
+        device_id: deviceId, // ID устройства из ADVERT (public_key)
         lat,
         lon,
+        name: name || null,
+        gateway_origin: origin, // Информация о шлюзе (через какой шлюз получены данные)
+        gateway_origin_id: originId, // ID шлюза
         s_time: sTime,
       };
 
       console.log(
-        `💾 [MQTT-Receiver] [${server.name}] Сохранение в Redis для ${originId}...`
+        `💾 [MQTT-Receiver] [${server.name}] Сохранение данных устройства в Redis для ${deviceId} (шлюз: ${origin})...`
       );
 
-      await this.redisManager.saveMeshcoreDot(originId, meshcoreData);
+      await this.redisManager.saveMeshcoreDot(deviceId, deviceData);
 
       // Логируем для отладки
       console.log(
-        `✅ [MQTT-Receiver] [${server.name}] Сохранены данные meshcore для ${originId}:`,
+        `✅ [MQTT-Receiver] [${server.name}] Сохранены данные устройства для ${deviceId}:`,
         JSON.stringify({
-          origin,
-          origin_id: originId,
+          device_id: deviceId,
+          name: name || null,
           lat: lat !== null ? lat.toFixed(7) : null,
           lon: lon !== null ? lon.toFixed(7) : null,
+          gateway: { origin, origin_id: originId },
           s_time: new Date(sTime).toISOString(),
         })
       );

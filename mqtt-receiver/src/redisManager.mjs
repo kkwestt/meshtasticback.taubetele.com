@@ -503,13 +503,13 @@ export class RedisManager {
   }
 
   /**
-   * Сохраняет данные meshcore в отдельный ключ Redis
-   * @param {string} originId - ID источника (origin_id)
-   * @param {Object} data - Данные для сохранения {origin, origin_id, lat, lon, s_time}
+   * Сохраняет данные meshcore устройства в отдельный ключ Redis
+   * @param {string} deviceId - ID устройства (public_key из ADVERT пакета)
+   * @param {Object} data - Данные для сохранения {device_id, lat, lon, name, gateway_origin, gateway_origin_id, s_time}
    */
-  async saveMeshcoreDot(originId, data) {
+  async saveMeshcoreDot(deviceId, data) {
     try {
-      const key = `dots_meshcore:${originId}`;
+      const key = `dots_meshcore:${deviceId}`;
       const currentTime = Date.now();
 
       console.log(
@@ -517,11 +517,14 @@ export class RedisManager {
       );
 
       // Подготавливаем данные для сохранения (Redis hash требует строковые значения)
+      // Сохраняем данные устройства: lat, lon, name, информация о шлюзе
       const dotData = {
-        origin: String(data.origin || ""),
-        origin_id: String(data.origin_id || originId),
+        device_id: String(data.device_id || deviceId),
         lat: data.lat !== undefined && data.lat !== null ? String(data.lat) : "",
         lon: data.lon !== undefined && data.lon !== null ? String(data.lon) : "",
+        name: data.name !== undefined && data.name !== null ? String(data.name) : "",
+        gateway_origin: String(data.gateway_origin || ""),
+        gateway_origin_id: String(data.gateway_origin_id || ""),
         s_time: String(data.s_time || currentTime),
       };
 
@@ -544,9 +547,18 @@ export class RedisManager {
         `✅ [MQTT-Receiver] Redis: Проверка сохраненных данных для ${key}:`,
         JSON.stringify(savedData)
       );
+
+      // Дополнительная проверка - получаем отдельные поля
+      const checkDeviceId = await this.redis.hget(key, "device_id");
+      const checkLat = await this.redis.hget(key, "lat");
+      const checkLon = await this.redis.hget(key, "lon");
+      const checkName = await this.redis.hget(key, "name");
+      console.log(
+        `🔍 [MQTT-Receiver] Redis: Проверка полей - device_id: ${checkDeviceId}, lat: ${checkLat}, lon: ${checkLon}, name: ${checkName}`
+      );
     } catch (error) {
       console.error(
-        `❌ [MQTT-Receiver] Error saving meshcore dot for ${originId}:`,
+        `❌ [MQTT-Receiver] Error saving meshcore dot for ${deviceId}:`,
         error.message,
         error.stack
       );
