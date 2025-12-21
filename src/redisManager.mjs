@@ -68,6 +68,31 @@ export class RedisManager {
     return await this.redis.ping();
   }
 
+  /**
+   * Использует SCAN вместо keys() для безопасного поиска ключей
+   * @param {string} pattern - Паттерн для поиска
+   * @param {number} batchSize - Размер батча для SCAN
+   * @returns {Promise<Array>} - Массив найденных ключей
+   */
+  async _scanKeys(pattern, batchSize = 100) {
+    const keys = [];
+    let cursor = 0;
+
+    do {
+      const [newCursor, foundKeys] = await this.redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        batchSize
+      );
+      cursor = newCursor;
+      keys.push(...foundKeys);
+    } while (cursor !== 0);
+
+    return keys;
+  }
+
   // ПРИМЕЧАНИЕ: Сохранение данных по portnum теперь выполняется в mqtt-receiver сервисе
 
   /**
@@ -115,7 +140,7 @@ export class RedisManager {
   async getAllPortnumMessages(portnumName) {
     try {
       const pattern = `${portnumName}:*`;
-      const keys = await this.redis.keys(pattern);
+      const keys = await this._scanKeys(pattern);
 
       if (keys.length === 0) {
         return {};
@@ -178,7 +203,7 @@ export class RedisManager {
 
       for (const portnumName of portnumNames) {
         const pattern = `${portnumName}:*`;
-        const keys = await this.redis.keys(pattern);
+        const keys = await this._scanKeys(pattern);
 
         stats[portnumName] = {
           deviceCount: keys.length,
@@ -262,7 +287,7 @@ export class RedisManager {
 
       for (const pattern of additionalPatterns) {
         try {
-          const keys = await this.redis.keys(pattern);
+          const keys = await this._scanKeys(pattern);
           for (const key of keys) {
             if (!keysToDelete.includes(key)) {
               keysToDelete.push(key);
@@ -580,7 +605,7 @@ export class RedisManager {
       // Fallback к старому методу если индекс недоступен
       try {
         const pattern = "dots:*";
-        const keys = await this.redis.keys(pattern);
+        const keys = await this._scanKeys(pattern);
         return keys.map((key) => key.replace("dots:", ""));
       } catch (fallbackError) {
         console.error("Fallback method also failed:", fallbackError.message);
@@ -624,7 +649,7 @@ export class RedisManager {
       // Fallback к старому методу
       try {
         const pattern = `${portnumName}:*`;
-        const keys = await this.redis.keys(pattern);
+        const keys = await this._scanKeys(pattern);
         return keys.map((key) => key.split(":")[1]);
       } catch (fallbackError) {
         console.error("Fallback method also failed:", fallbackError.message);
