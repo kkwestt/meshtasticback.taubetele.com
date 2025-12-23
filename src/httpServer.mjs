@@ -387,7 +387,34 @@ export class HTTPServer {
    */
   async handleDotsMeshcoreEndpoint(req, res) {
     try {
+      const startTime = Date.now();
       const pattern = "dots_meshcore:*";
+      
+      // Проверяем кэш Redis (кэшируем на 30 секунд, как в /dots)
+      const cacheKey = "dots_meshcore_cache";
+      const cached = await this.redisManager.redis.get(cacheKey);
+      
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        const responseTime = Date.now() - startTime;
+        
+        // Добавляем заголовки кэширования
+        res.set({
+          "Cache-Control": "public, max-age=30",
+          "Content-Type": "application/json",
+          "X-Device-Count": cachedData.device_count,
+          "X-Response-Time": `${responseTime}ms`,
+          "X-Cached": "true",
+        });
+        
+        res.json({
+          ...cachedData,
+          timestamp: Date.now(),
+          response_time_ms: responseTime,
+        });
+        return;
+      }
+      
       const result = {};
       
       // Используем SCAN для поиска всех ключей по паттерну
@@ -447,12 +474,30 @@ export class HTTPServer {
         }
       });
 
-      res.json({
+      const deviceCount = Object.keys(result).length;
+      const responseTime = Date.now() - startTime;
+      
+      const responseData = {
         pattern: pattern,
         timestamp: Date.now(),
-        device_count: Object.keys(result).length,
+        device_count: deviceCount,
         data: result,
+        response_time_ms: responseTime,
+      };
+
+      // Кэшируем результат на 30 секунд
+      await this.redisManager.redis.setex(cacheKey, 30, JSON.stringify(responseData));
+
+      // Добавляем заголовки кэширования
+      res.set({
+        "Cache-Control": "public, max-age=30",
+        "Content-Type": "application/json",
+        "X-Device-Count": deviceCount,
+        "X-Response-Time": `${responseTime}ms`,
+        "X-Cached": "false",
       });
+
+      res.json(responseData);
     } catch (error) {
       handleEndpointError(error, res, "Dots meshcore endpoint");
     }

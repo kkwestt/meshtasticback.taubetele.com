@@ -1107,6 +1107,14 @@ export class RedisManager {
       const expireResult = await this.redis.expire(key, DEVICE_EXPIRY_TIME);
       console.log(`🔧 [${this.serviceName}] Redis: expire результат: ${expireResult}`);
 
+      // Инвалидируем кэш эндпоинта dots_meshcore для быстрого обновления данных
+      try {
+        await this.redis.del("dots_meshcore_cache");
+      } catch (cacheError) {
+        // Игнорируем ошибки инвалидации кэша
+        console.log(`⚠️ [${this.serviceName}] Не удалось инвалидировать кэш: ${cacheError.message}`);
+      }
+
       // Проверяем, что данные сохранились
       const savedData = await this.redis.hgetall(key);
       console.log(
