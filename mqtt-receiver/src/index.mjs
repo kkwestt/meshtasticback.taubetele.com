@@ -366,9 +366,7 @@ class MqttReceiver {
       // Извлекаем базовые данные из JSON
       const origin = jsonData.origin || "";
       const originId = jsonData.origin_id || "";
-      const sTime = jsonData.timestamp 
-        ? new Date(jsonData.timestamp).getTime() 
-        : Date.now();
+      // s_time всегда устанавливается как время сервера в методе saveMeshcoreDot (по аналогии с meshtastic данными)
 
       if (!originId) {
         console.log(`⚠️ [MQTT-Receiver] [${server.name}] Нет origin_id в пакете meshcore`);
@@ -376,7 +374,7 @@ class MqttReceiver {
       }
 
       console.log(
-        `📊 [MQTT-Receiver] [${server.name}] Извлечены данные: origin=${origin}, origin_id=${originId}, s_time=${sTime}`
+        `📊 [MQTT-Receiver] [${server.name}] Извлечены данные: origin=${origin}, origin_id=${originId}`
       );
 
       // Инициализируем данные для сохранения устройства
@@ -452,6 +450,7 @@ class MqttReceiver {
       }
 
       // Сохраняем данные устройства: ID устройства, координаты, имя, информация о шлюзе
+      // s_time всегда устанавливается как время сервера в методе saveMeshcoreDot
       const deviceData = {
         device_id: deviceId, // ID устройства из ADVERT (public_key)
         lat,
@@ -459,7 +458,6 @@ class MqttReceiver {
         name: name || null,
         gateway_origin: origin, // Информация о шлюзе (через какой шлюз получены данные)
         gateway_origin_id: originId, // ID шлюза
-        s_time: sTime,
       };
 
       console.log(
@@ -469,6 +467,7 @@ class MqttReceiver {
       await this.redisManager.saveMeshcoreDot(deviceId, deviceData);
 
       // Логируем для отладки
+      const serverTime = Date.now();
       console.log(
         `✅ [MQTT-Receiver] [${server.name}] Сохранены данные устройства для ${deviceId}:`,
         JSON.stringify({
@@ -477,7 +476,7 @@ class MqttReceiver {
           lat: lat !== null ? lat.toFixed(7) : null,
           lon: lon !== null ? lon.toFixed(7) : null,
           gateway: { origin, origin_id: originId },
-          s_time: new Date(sTime).toISOString(),
+          s_time: new Date(serverTime).toISOString(),
         })
       );
     } catch (parseError) {

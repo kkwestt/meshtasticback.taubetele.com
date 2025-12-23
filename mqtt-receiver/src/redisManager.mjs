@@ -510,6 +510,7 @@ export class RedisManager {
   async saveMeshcoreDot(deviceId, data) {
     try {
       const key = `dots_meshcore:${deviceId}`;
+      // Всегда используем время сервера для s_time (по аналогии с meshtastic данными)
       const currentTime = Date.now();
 
       console.log(
@@ -526,7 +527,7 @@ export class RedisManager {
         name: data.name !== undefined && data.name !== null ? String(data.name) : "",
         gateway_origin: String(data.gateway_origin || ""),
         gateway_origin_id: String(data.gateway_origin_id || ""),
-        s_time: String(data.s_time || currentTime),
+        s_time: String(currentTime),
       };
 
       console.log(
