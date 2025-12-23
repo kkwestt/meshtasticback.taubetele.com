@@ -431,8 +431,11 @@ export class HTTPServer {
               // Пытаемся распарсить как JSON
               parsedData[field] = JSON.parse(value);
             } catch {
-              // Если не JSON, пытаемся преобразовать в число
-              if (!isNaN(value) && value !== "") {
+              // Для координат: пустые строки и "0" преобразуем в null для согласованности
+              if ((field === "lat" || field === "lon") && (value === "" || value === "0")) {
+                parsedData[field] = null;
+              } else if (!isNaN(value) && value !== "") {
+                // Если не JSON и не пустая строка, пытаемся преобразовать в число
                 parsedData[field] = Number(value);
               } else {
                 parsedData[field] = value;

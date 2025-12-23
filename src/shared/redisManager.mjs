@@ -1082,10 +1082,11 @@ export class RedisManager {
 
       // Подготавливаем данные для сохранения (Redis hash требует строковые значения)
       // Сохраняем данные устройства: lat, lon, name, информация о шлюзе
+      // Координаты 0 обрабатываем как отсутствующие (GPS не определил позицию)
       const dotData = {
         device_id: String(data.device_id || deviceId),
-        lat: data.lat !== undefined && data.lat !== null ? String(data.lat) : "",
-        lon: data.lon !== undefined && data.lon !== null ? String(data.lon) : "",
+        lat: data.lat !== undefined && data.lat !== null && data.lat !== 0 ? String(data.lat) : "",
+        lon: data.lon !== undefined && data.lon !== null && data.lon !== 0 ? String(data.lon) : "",
         name: data.name !== undefined && data.name !== null ? String(data.name) : "",
         gateway_origin: String(data.gateway_origin || ""),
         gateway_origin_id: String(data.gateway_origin_id || ""),
