@@ -517,17 +517,58 @@ export class RedisManager {
         `🔧 [MQTT-Receiver] Redis: Сохранение в ключ ${key}`
       );
 
-      // Подготавливаем данные для сохранения (Redis hash требует строковые значения)
-      // Сохраняем данные устройства: lat, lon, name, информация о шлюзе
-      // Координаты 0 обрабатываем как отсутствующие (GPS не определил позицию)
+      // Читаем существующие данные для объединения
+      const existingData = await this.redis.hgetall(key);
+
+      // Подготавливаем поля для обновления (обновляем только те, которые пришли в новом пакете)
+      const fieldsToUpdate = {};
+
+      // Обновляем device_id только если он передан
+      if (data.device_id !== undefined) {
+        fieldsToUpdate.device_id = String(data.device_id || deviceId);
+      } else if (existingData.device_id) {
+        fieldsToUpdate.device_id = existingData.device_id;
+      } else {
+        fieldsToUpdate.device_id = String(deviceId);
+      }
+
+      // Обновляем координаты только если они переданы и не равны 0
+      if (data.lat !== undefined && data.lat !== null && data.lat !== 0) {
+        fieldsToUpdate.lat = String(data.lat);
+      } else if (existingData.lat && existingData.lat !== "") {
+        fieldsToUpdate.lat = existingData.lat;
+      } else {
+        fieldsToUpdate.lat = "";
+      }
+
+      if (data.lon !== undefined && data.lon !== null && data.lon !== 0) {
+        fieldsToUpdate.lon = String(data.lon);
+      } else if (existingData.lon && existingData.lon !== "") {
+        fieldsToUpdate.lon = existingData.lon;
+      } else {
+        fieldsToUpdate.lon = "";
+      }
+
+      // Обновляем имя только если оно передано
+      if (data.name !== undefined && data.name !== null && data.name !== "") {
+        fieldsToUpdate.name = String(data.name);
+      } else if (existingData.name && existingData.name !== "") {
+        fieldsToUpdate.name = existingData.name;
+      } else {
+        fieldsToUpdate.name = "";
+      }
+
+      // Обновляем информацию о шлюзе (всегда обновляем, так как это может измениться)
+      fieldsToUpdate.gateway_origin = String(data.gateway_origin || "");
+      fieldsToUpdate.gateway_origin_id = String(data.gateway_origin_id || "");
+
+      // Всегда обновляем время сервера
+      fieldsToUpdate.s_time = String(currentTime);
+
+      // Объединяем существующие данные с обновляемыми полями
       const dotData = {
-        device_id: String(data.device_id || deviceId),
-        lat: data.lat !== undefined && data.lat !== null && data.lat !== 0 ? String(data.lat) : "",
-        lon: data.lon !== undefined && data.lon !== null && data.lon !== 0 ? String(data.lon) : "",
-        name: data.name !== undefined && data.name !== null ? String(data.name) : "",
-        gateway_origin: String(data.gateway_origin || ""),
-        gateway_origin_id: String(data.gateway_origin_id || ""),
-        s_time: String(currentTime),
+        ...existingData,
+        ...fieldsToUpdate,
       };
 
       console.log(
