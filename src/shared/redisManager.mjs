@@ -1126,14 +1126,14 @@ export class RedisManager {
       fieldsToUpdate.gateway_origin = String(data.gateway_origin || "");
       fieldsToUpdate.gateway_origin_id = String(data.gateway_origin_id || "");
 
-      // Всегда обновляем время сервера
-      fieldsToUpdate.s_time = String(currentTime);
-
       // Объединяем существующие данные с обновляемыми полями
       const dotData = {
         ...existingData,
         ...fieldsToUpdate,
       };
+
+      // Всегда обновляем время сервера (гарантируем обновление при каждом вызове)
+      dotData.s_time = String(currentTime);
 
       console.log(
         `🔧 [${this.serviceName}] Redis: Данные для сохранения:`,
