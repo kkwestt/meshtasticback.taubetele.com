@@ -1067,6 +1067,121 @@ export class RedisManager {
   }
 
   /**
+   * Сохраняет данные meshcore устройства в отдельный ключ Redis
+   * @param {string} deviceId - ID устройства (public_key из ADVERT пакета)
+   * @param {Object} data - Данные для сохранения {device_id, lat, lon, name, gateway_origin, gateway_origin_id, s_time}
+   */
+  async saveMeshcoreDot(deviceId, data) {
+    try {
+      const key = `dots_meshcore:${deviceId}`;
+      // Всегда используем время сервера для s_time (по аналогии с meshtastic данными)
+      const currentTime = Date.now();
+
+      console.log(
+        `🔧 [${this.serviceName}] Redis: Сохранение в ключ ${key}`
+      );
+
+      // Читаем существующие данные для объединения
+      const existingData = await this.redis.hgetall(key);
+
+      // Подготавливаем поля для обновления (обновляем только те, которые пришли в новом пакете)
+      const fieldsToUpdate = {};
+
+      // Обновляем device_id только если он передан
+      if (data.device_id !== undefined) {
+        fieldsToUpdate.device_id = String(data.device_id || deviceId);
+      } else if (existingData.device_id) {
+        fieldsToUpdate.device_id = existingData.device_id;
+      } else {
+        fieldsToUpdate.device_id = String(deviceId);
+      }
+
+      // Обновляем координаты только если они переданы и не равны 0
+      if (data.lat !== undefined && data.lat !== null && data.lat !== 0) {
+        fieldsToUpdate.lat = String(data.lat);
+      } else if (existingData.lat && existingData.lat !== "") {
+        fieldsToUpdate.lat = existingData.lat;
+      } else {
+        fieldsToUpdate.lat = "";
+      }
+
+      if (data.lon !== undefined && data.lon !== null && data.lon !== 0) {
+        fieldsToUpdate.lon = String(data.lon);
+      } else if (existingData.lon && existingData.lon !== "") {
+        fieldsToUpdate.lon = existingData.lon;
+      } else {
+        fieldsToUpdate.lon = "";
+      }
+
+      // Обновляем имя только если оно передано
+      if (data.name !== undefined && data.name !== null && data.name !== "") {
+        fieldsToUpdate.name = String(data.name);
+      } else if (existingData.name && existingData.name !== "") {
+        fieldsToUpdate.name = existingData.name;
+      } else {
+        fieldsToUpdate.name = "";
+      }
+
+      // Обновляем информацию о шлюзе (всегда обновляем, так как это может измениться)
+      fieldsToUpdate.gateway_origin = String(data.gateway_origin || "");
+      fieldsToUpdate.gateway_origin_id = String(data.gateway_origin_id || "");
+
+      // Объединяем существующие данные с обновляемыми полями
+      const dotData = {
+        ...existingData,
+        ...fieldsToUpdate,
+      };
+
+      // Всегда обновляем время сервера (гарантируем обновление при каждом вызове)
+      dotData.s_time = String(currentTime);
+
+      console.log(
+        `🔧 [${this.serviceName}] Redis: Данные для сохранения:`,
+        JSON.stringify(dotData)
+      );
+
+      // Сохраняем как hash в Redis
+      // hset обновляет существующие поля и добавляет новые
+      const result = await this.redis.hset(key, dotData);
+      console.log(`🔧 [${this.serviceName}] Redis: hset результат: ${result} (0 = все поля уже существовали, >0 = добавлены новые поля)`);
+
+      // Устанавливаем TTL (время жизни ключа) - 3 часа
+      const expireResult = await this.redis.expire(key, DEVICE_EXPIRY_TIME);
+      console.log(`🔧 [${this.serviceName}] Redis: expire результат: ${expireResult}`);
+
+      // Инвалидируем кэш эндпоинта dots_meshcore для быстрого обновления данных
+      try {
+        await this.redis.del("dots_meshcore_cache");
+      } catch (cacheError) {
+        // Игнорируем ошибки инвалидации кэша
+        console.log(`⚠️ [${this.serviceName}] Не удалось инвалидировать кэш: ${cacheError.message}`);
+      }
+
+      // Проверяем, что данные сохранились
+      const savedData = await this.redis.hgetall(key);
+      console.log(
+        `✅ [${this.serviceName}] Redis: Проверка сохраненных данных для ${key}:`,
+        JSON.stringify(savedData)
+      );
+      
+      // Дополнительная проверка - получаем отдельные поля
+      const checkDeviceId = await this.redis.hget(key, "device_id");
+      const checkLat = await this.redis.hget(key, "lat");
+      const checkLon = await this.redis.hget(key, "lon");
+      const checkName = await this.redis.hget(key, "name");
+      console.log(
+        `🔍 [${this.serviceName}] Redis: Проверка полей - device_id: ${checkDeviceId}, lat: ${checkLat}, lon: ${checkLon}, name: ${checkName}`
+      );
+    } catch (error) {
+      console.error(
+        `❌ [${this.serviceName}] Error saving meshcore dot for ${deviceId}:`,
+        error.message,
+        error.stack
+      );
+    }
+  }
+
+  /**
    * Отключается от Redis
    */
   async disconnect() {

@@ -10,6 +10,13 @@ const UFA_CHANNEL_ID = ""; // ID канала Уфы (опционально)
 // Переменная для отключения Telegram бота
 const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED !== "false";
 
+// SOCKS Proxy configuration для Telegram
+const TELEGRAM_PROXY_ENABLED = process.env.TELEGRAM_PROXY_ENABLED === "true";
+const TELEGRAM_PROXY_HOST = process.env.TELEGRAM_PROXY_HOST || "your-proxy-server.com";
+const TELEGRAM_PROXY_PORT = process.env.TELEGRAM_PROXY_PORT || 1080;
+const TELEGRAM_PROXY_USER = process.env.TELEGRAM_PROXY_USER || "proxy_username";
+const TELEGRAM_PROXY_PASS = process.env.TELEGRAM_PROXY_PASS || "proxy_password";
+
 export const botSettings = {
   ENABLE: TELEGRAM_ENABLED,
   BOT_TOKEN,
@@ -17,6 +24,13 @@ export const botSettings = {
   MAIN_CHANNEL_ID,
   KALININGRAD_CHANNEL_ID,
   UFA_CHANNEL_ID,
+  PROXY: {
+    ENABLED: TELEGRAM_PROXY_ENABLED,
+    HOST: TELEGRAM_PROXY_HOST,
+    PORT: TELEGRAM_PROXY_PORT,
+    USER: TELEGRAM_PROXY_USER,
+    PASS: TELEGRAM_PROXY_PASS,
+  },
 };
 
 // Redis configuration - обновлено для контейнерной архитектуры

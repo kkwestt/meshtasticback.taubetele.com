@@ -1,4 +1,5 @@
 import { Telegraf } from "telegraf";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import { botSettings } from "../config.mjs";
 
 const MESSAGE_GROUP_TIMEOUT = 15 * 1000;
@@ -22,7 +23,21 @@ const formatHopCount = (hop) => {
 
 let bot = null;
 if (botSettings.ENABLE && botSettings.BOT_TOKEN) {
-  bot = new Telegraf(botSettings.BOT_TOKEN);
+  const botOptions = {};
+  
+  // Configure SOCKS proxy if enabled
+  if (botSettings.PROXY?.ENABLED) {
+    const proxyUrl = `socks5://${botSettings.PROXY.USER}:${botSettings.PROXY.PASS}@${botSettings.PROXY.HOST}:${botSettings.PROXY.PORT}`;
+    const agent = new SocksProxyAgent(proxyUrl);
+    
+    botOptions.telegram = {
+      agent,
+    };
+    
+    console.log(`🔒 [Telegram] SOCKS proxy enabled: ${botSettings.PROXY.HOST}:${botSettings.PROXY.PORT}`);
+  }
+  
+  bot = new Telegraf(botSettings.BOT_TOKEN, botOptions);
   // console.log("Telegram bot initialized");
 }
 
