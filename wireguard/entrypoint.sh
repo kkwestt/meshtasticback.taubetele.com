@@ -38,7 +38,7 @@ while true; do
     if ! wg show wg0 &> /dev/null; then
         echo "❌ WireGuard interface down, restarting..."
         wg-quick down wg0 || true
-        wg-quick up wg0
+        wg-quick up wg0 || echo "⚠️  wg-quick up failed, will retry in 30s"
     fi
     sleep 30
 done
