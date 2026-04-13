@@ -10,8 +10,13 @@ const UFA_CHANNEL_ID = ""; // ID канала Уфы (опционально)
 // Переменная для отключения Telegram бота
 const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED !== "false";
 
+// SOCKS5/HTTP прокси для Telegram бота (например, через xray: socks5://xray:10808)
+// Оставьте null или не задавайте переменную, чтобы подключаться напрямую
+const TELEGRAM_PROXY_URL = process.env.TELEGRAM_PROXY_URL || null;
+
 export const botSettings = {
   ENABLE: TELEGRAM_ENABLED,
+  PROXY_URL: TELEGRAM_PROXY_URL,
   BOT_TOKEN,
   BOT_USERNAME: "YourBotUsernameBot", // Имя вашего бота
   MAIN_CHANNEL_ID,

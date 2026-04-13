@@ -19,6 +19,16 @@ services:
       - meshtastic_network
     mem_limit: 5g
 
+  # Xray-core VLESS proxy (для Telegram бота)
+  xray:
+    image: ghcr.io/xtls/xray-core:latest
+    container_name: meshtastic_xray
+    restart: unless-stopped
+    volumes:
+      - ./xray/config.json:/etc/xray/config.json:ro
+    networks:
+      - meshtastic_network
+
   # MQTT Receiver сервис (приём и обработка MQTT данных)
   mqtt-receiver:
     build:
@@ -28,6 +38,7 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+      - xray
     environment:
       - NODE_ENV=production
       - REDIS_HOST=redis
@@ -36,6 +47,8 @@ services:
       - NODE_OPTIONS=--max-old-space-size=1024
       # Управление Telegram ботом (true/false)
       - TELEGRAM_ENABLED=true
+      # Прокси для Telegram бота через xray VLESS
+      - TELEGRAM_PROXY_URL=socks5://xray:10808
       # Отключение статистических логов
       - STATS_LOGGING_ENABLED=false
     volumes:

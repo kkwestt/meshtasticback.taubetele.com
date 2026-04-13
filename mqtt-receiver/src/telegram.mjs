@@ -1,4 +1,5 @@
 import { Telegraf } from "telegraf";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import { botSettings } from "../config.mjs";
 
 const MESSAGE_GROUP_TIMEOUT = 15 * 1000;
@@ -22,7 +23,12 @@ const formatHopCount = (hop) => {
 
 let bot = null;
 if (botSettings.ENABLE && botSettings.BOT_TOKEN) {
-  bot = new Telegraf(botSettings.BOT_TOKEN);
+  const botOptions = {};
+  const proxyUrl = process.env.TELEGRAM_PROXY_URL;
+  if (proxyUrl) {
+    botOptions.telegram = { agent: new SocksProxyAgent(proxyUrl) };
+  }
+  bot = new Telegraf(botSettings.BOT_TOKEN, botOptions);
   // console.log("Telegram bot initialized");
 }
 
