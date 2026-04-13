@@ -20,11 +20,10 @@ const formatHopCount = (hop) => {
   return hop; // fallback for unexpected values
 };
 
-// Инициализация бота (трафик идет через WireGuard на уровне Docker)
 let bot = null;
 if (botSettings.ENABLE && botSettings.BOT_TOKEN) {
   bot = new Telegraf(botSettings.BOT_TOKEN);
-  console.log("🤖 [Telegram] Бот инициализирован (трафик через WireGuard VPN)");
+  // console.log("Telegram bot initialized");
 }
 
 const messageGroups = new Map();
