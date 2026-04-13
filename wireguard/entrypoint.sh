@@ -13,10 +13,14 @@ if [ ! -f /etc/wireguard/wg0.conf ]; then
     done
 fi
 
-# Настройка IP forwarding
-echo "🔧 Enabling IP forwarding..."
-sysctl -w net.ipv4.ip_forward=1
-sysctl -w net.ipv4.conf.all.forwarding=1
+# Проверяем IP forwarding (настраивается через docker-compose sysctls)
+echo "🔧 Checking IP forwarding..."
+if [ "$(cat /proc/sys/net/ipv4/ip_forward)" = "1" ]; then
+    echo "✅ IP forwarding enabled"
+else
+    echo "⚠️  IP forwarding not enabled, trying to enable..."
+    echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo "❌ Failed to enable IP forwarding (check docker-compose sysctls)"
+fi
 
 # Запуск WireGuard
 echo "🚀 Starting WireGuard interface wg0..."
