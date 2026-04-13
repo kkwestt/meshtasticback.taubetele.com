@@ -10,31 +10,6 @@ const UFA_CHANNEL_ID = ""; // ID канала Уфы (опционально)
 // Переменная для отключения Telegram бота
 const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED !== "false";
 
-// SOCKS Proxy configuration для Telegram
-// Приоритет подключения: 1) Прямое подключение, 2) Прокси из списка по порядку
-const TELEGRAM_PROXY_ENABLED = process.env.TELEGRAM_PROXY_ENABLED === "true";
-
-// Список прокси-серверов (будут проверяться по порядку, если прямое подключение не работает)
-// Поддерживаемые типы: "socks5", "socks4", "http", "https"
-// ВАЖНО: MTProto прокси НЕ поддерживаются для Bot API (только для клиентских приложений)
-const TELEGRAM_PROXIES = [
-  {
-    type: "socks5", // socks5, socks4, http, https
-    host: process.env.TELEGRAM_PROXY_HOST || "your-proxy-server.com",
-    port: parseInt(process.env.TELEGRAM_PROXY_PORT || "1080"),
-    user: process.env.TELEGRAM_PROXY_USER || "proxy_username",
-    pass: process.env.TELEGRAM_PROXY_PASS || "proxy_password",
-  },
-  // Добавьте дополнительные прокси при необходимости:
-  // {
-  //   type: "http",
-  //   host: "backup-proxy.com",
-  //   port: 8080,
-  //   user: "user2",
-  //   pass: "pass2",
-  // },
-];
-
 export const botSettings = {
   ENABLE: TELEGRAM_ENABLED,
   BOT_TOKEN,
@@ -42,11 +17,6 @@ export const botSettings = {
   MAIN_CHANNEL_ID,
   KALININGRAD_CHANNEL_ID,
   UFA_CHANNEL_ID,
-  PROXY: {
-    ENABLED: TELEGRAM_PROXY_ENABLED,
-    PROXIES: TELEGRAM_PROXIES,
-    CONNECTION_TIMEOUT: 10000, // 10 секунд на проверку подключения
-  },
 };
 
 // Redis configuration - обновлено для контейнерной архитектуры

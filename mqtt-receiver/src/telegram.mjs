@@ -1,7 +1,4 @@
 import { Telegraf } from "telegraf";
-import { SocksProxyAgent } from "socks-proxy-agent";
-import { HttpProxyAgent } from "http-proxy-agent";
-import { HttpsProxyAgent } from "https-proxy-agent";
 import { botSettings } from "../config.mjs";
 
 const MESSAGE_GROUP_TIMEOUT = 15 * 1000;
@@ -23,112 +20,12 @@ const formatHopCount = (hop) => {
   return hop; // fallback for unexpected values
 };
 
-// Функция создания прокси-агента в зависимости от типа
-function createProxyAgent(proxy) {
-  const { type, host, port, user, pass } = proxy;
-  
-  // Формируем URL с учетом аутентификации
-  const auth = user && pass ? `${user}:${pass}@` : "";
-  
-  switch (type?.toLowerCase()) {
-    case "socks4":
-    case "socks5":
-      const socksUrl = `${type}://${auth}${host}:${port}`;
-      return new SocksProxyAgent(socksUrl);
-    
-    case "http":
-      const httpUrl = `http://${auth}${host}:${port}`;
-      return new HttpProxyAgent(httpUrl);
-    
-    case "https":
-      const httpsUrl = `https://${auth}${host}:${port}`;
-      return new HttpsProxyAgent(httpsUrl);
-    
-    default:
-      // По умолчанию используем socks5
-      const defaultUrl = `socks5://${auth}${host}:${port}`;
-      return new SocksProxyAgent(defaultUrl);
-  }
-}
-
-// Функция проверки подключения к Telegram
-async function testTelegramConnection(botInstance, timeout = 10000) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
-    await botInstance.telegram.getMe({ signal: controller.signal });
-    clearTimeout(timeoutId);
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-// Функция инициализации бота с fallback
-async function createBotWithFallback() {
-  if (!botSettings.ENABLE || !botSettings.BOT_TOKEN) {
-    return null;
-  }
-
-  const timeout = botSettings.PROXY?.CONNECTION_TIMEOUT || 10000;
-  
-  // Приоритет 1: Попытка прямого подключения
-  console.log("🔄 [Telegram] Попытка прямого подключения...");
-  try {
-    const directBot = new Telegraf(botSettings.BOT_TOKEN);
-    const isDirectConnected = await testTelegramConnection(directBot, timeout);
-    
-    if (isDirectConnected) {
-      console.log("✅ [Telegram] Прямое подключение успешно");
-      return directBot;
-    } else {
-      console.log("❌ [Telegram] Прямое подключение не удалось");
-    }
-  } catch (error) {
-    console.log("❌ [Telegram] Ошибка прямого подключения:", error.message);
-  }
-
-  // Приоритет 2: Попытка подключения через прокси (если включено)
-  if (botSettings.PROXY?.ENABLED && botSettings.PROXY?.PROXIES?.length > 0) {
-    for (let i = 0; i < botSettings.PROXY.PROXIES.length; i++) {
-      const proxy = botSettings.PROXY.PROXIES[i];
-      const proxyType = proxy.type || "socks5";
-      console.log(`🔄 [Telegram] Попытка подключения через ${proxyType} прокси ${i + 1}/${botSettings.PROXY.PROXIES.length}: ${proxy.host}:${proxy.port}`);
-      
-      try {
-        const agent = createProxyAgent(proxy);
-        
-        const proxyBot = new Telegraf(botSettings.BOT_TOKEN, {
-          telegram: { agent },
-        });
-        
-        const isProxyConnected = await testTelegramConnection(proxyBot, timeout);
-        
-        if (isProxyConnected) {
-          console.log(`✅ [Telegram] Подключение через ${proxyType} прокси ${proxy.host}:${proxy.port} успешно`);
-          return proxyBot;
-        } else {
-          console.log(`❌ [Telegram] ${proxyType} прокси ${proxy.host}:${proxy.port} не работает`);
-        }
-      } catch (error) {
-        console.log(`❌ [Telegram] Ошибка подключения через ${proxyType} прокси ${proxy.host}:${proxy.port}:`, error.message);
-      }
-    }
-  }
-
-  console.error("❌ [Telegram] Не удалось установить подключение ни напрямую, ни через прокси");
-  return null;
-}
-
-// Инициализация бота
+// Инициализация бота (трафик идет через WireGuard на уровне Docker)
 let bot = null;
-(async () => {
-  bot = await createBotWithFallback();
-  if (bot) {
-    console.log("🤖 [Telegram] Бот инициализирован успешно");
-  }
-})();
+if (botSettings.ENABLE && botSettings.BOT_TOKEN) {
+  bot = new Telegraf(botSettings.BOT_TOKEN);
+  console.log("🤖 [Telegram] Бот инициализирован (трафик через WireGuard VPN)");
+}
 
 const messageGroups = new Map();
 const processedMessages = new Set();

@@ -19,6 +19,25 @@ services:
       - meshtastic_network
     mem_limit: 5g
 
+  # WireGuard VPN сервис для маршрутизации Telegram трафика
+  wireguard:
+    build:
+      context: ./wireguard
+      dockerfile: Dockerfile
+    container_name: meshtastic_wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      # Монтируем конфигурацию WireGuard (создайте wg0.conf на основе wg0.conf.example)
+      - ./wireguard/wg0.conf:/etc/wireguard/wg0.conf:ro
+    networks:
+      - meshtastic_network
+
   # MQTT Receiver сервис (приём и обработка MQTT данных)
   mqtt-receiver:
     build:
@@ -26,8 +45,11 @@ services:
       dockerfile: ./mqtt-receiver/Dockerfile
     container_name: meshtastic_mqtt_receiver
     restart: unless-stopped
+    # Используем сетевой стек WireGuard контейнера для Telegram трафика
+    network_mode: "service:wireguard"
     depends_on:
       - redis
+      - wireguard
     environment:
       - NODE_ENV=production
       - REDIS_HOST=redis
@@ -40,8 +62,6 @@ services:
       - STATS_LOGGING_ENABLED=false
     volumes:
       - ./protobufs:/app/protobufs:ro
-    networks:
-      - meshtastic_network
     mem_limit: 1g
 
   # Основной сервис (HTTP API и Telegram бот)
