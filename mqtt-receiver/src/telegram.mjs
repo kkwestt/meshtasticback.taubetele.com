@@ -66,7 +66,7 @@ async function testTelegramConnection(botInstance, timeout = 10000) {
 }
 
 // Функция инициализации бота с fallback
-async function initializeTelegramBot() {
+async function createBotWithFallback() {
   if (!botSettings.ENABLE || !botSettings.BOT_TOKEN) {
     return null;
   }
@@ -124,7 +124,7 @@ async function initializeTelegramBot() {
 // Инициализация бота
 let bot = null;
 (async () => {
-  bot = await initializeTelegramBot();
+  bot = await createBotWithFallback();
   if (bot) {
     console.log("🤖 [Telegram] Бот инициализирован успешно");
   }
