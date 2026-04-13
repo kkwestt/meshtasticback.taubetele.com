@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🔐 Starting WireGuard VPN..."
+echo "🔐 Starting WireGuard VPN (userspace mode)..."
 
 # Проверяем наличие конфигурации
 if [ ! -f /etc/wireguard/wg0.conf ]; then
@@ -14,16 +14,13 @@ if [ ! -f /etc/wireguard/wg0.conf ]; then
 fi
 
 # Проверяем IP forwarding (настраивается через docker-compose sysctls)
-echo "🔧 Checking IP forwarding..."
-if [ "$(cat /proc/sys/net/ipv4/ip_forward)" = "1" ]; then
-    echo "✅ IP forwarding enabled"
-else
-    echo "⚠️  IP forwarding not enabled, trying to enable..."
-    echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo "❌ Failed to enable IP forwarding (check docker-compose sysctls)"
-fi
+echo "🔧 Enabling IP forwarding..."
+sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv4.conf.all.forwarding=1
 
-# Запуск WireGuard
-echo "🚀 Starting WireGuard interface wg0..."
+# Запуск WireGuard в userspace режиме
+echo "🚀 Starting WireGuard interface wg0 (using wireguard-go)..."
+export WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go
 wg-quick up wg0
 
 # Проверка статуса
