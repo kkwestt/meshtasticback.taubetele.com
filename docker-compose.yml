@@ -24,7 +24,7 @@ services:
     image: ghcr.io/xtls/xray-core:latest
     container_name: meshtastic_xray
     restart: unless-stopped
-    command: ["xray", "run", "-config", "/etc/xray/config.json"]
+    command: ["run", "-config", "/etc/xray/config.json"]
     volumes:
       - ./xray/config.json:/etc/xray/config.json:ro
     networks:
