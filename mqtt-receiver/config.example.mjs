@@ -11,11 +11,29 @@ const UFA_CHANNEL_ID = ""; // ID канала Уфы (опционально)
 const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED !== "false";
 
 // SOCKS Proxy configuration для Telegram
+// Приоритет подключения: 1) Прямое подключение, 2) Прокси из списка по порядку
 const TELEGRAM_PROXY_ENABLED = process.env.TELEGRAM_PROXY_ENABLED === "true";
-const TELEGRAM_PROXY_HOST = process.env.TELEGRAM_PROXY_HOST || "your-proxy-server.com";
-const TELEGRAM_PROXY_PORT = process.env.TELEGRAM_PROXY_PORT || 1080;
-const TELEGRAM_PROXY_USER = process.env.TELEGRAM_PROXY_USER || "proxy_username";
-const TELEGRAM_PROXY_PASS = process.env.TELEGRAM_PROXY_PASS || "proxy_password";
+
+// Список прокси-серверов (будут проверяться по порядку, если прямое подключение не работает)
+// Поддерживаемые типы: "socks5", "socks4", "http", "https"
+// ВАЖНО: MTProto прокси НЕ поддерживаются для Bot API (только для клиентских приложений)
+const TELEGRAM_PROXIES = [
+  {
+    type: "socks5", // socks5, socks4, http, https
+    host: process.env.TELEGRAM_PROXY_HOST || "your-proxy-server.com",
+    port: parseInt(process.env.TELEGRAM_PROXY_PORT || "1080"),
+    user: process.env.TELEGRAM_PROXY_USER || "proxy_username",
+    pass: process.env.TELEGRAM_PROXY_PASS || "proxy_password",
+  },
+  // Добавьте дополнительные прокси при необходимости:
+  // {
+  //   type: "http",
+  //   host: "backup-proxy.com",
+  //   port: 8080,
+  //   user: "user2",
+  //   pass: "pass2",
+  // },
+];
 
 export const botSettings = {
   ENABLE: TELEGRAM_ENABLED,
@@ -26,10 +44,8 @@ export const botSettings = {
   UFA_CHANNEL_ID,
   PROXY: {
     ENABLED: TELEGRAM_PROXY_ENABLED,
-    HOST: TELEGRAM_PROXY_HOST,
-    PORT: TELEGRAM_PROXY_PORT,
-    USER: TELEGRAM_PROXY_USER,
-    PASS: TELEGRAM_PROXY_PASS,
+    PROXIES: TELEGRAM_PROXIES,
+    CONNECTION_TIMEOUT: 10000, // 10 секунд на проверку подключения
   },
 };
 
