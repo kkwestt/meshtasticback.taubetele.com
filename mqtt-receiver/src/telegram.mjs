@@ -315,10 +315,14 @@ const getGatewayInfoBatch = async (redis, gatewayIds) => {
         );
 
         if (userData && userData[0]) {
-          const longName =
-            userData[0].rawData?.longName || userData[0].rawData?.long_name;
-          const shortName =
-            userData[0].rawData?.shortName || userData[0].rawData?.short_name;
+          const stripCtrl = (s) =>
+            typeof s === "string" ? s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "") : s;
+          const longName = stripCtrl(
+            userData[0].rawData?.longName || userData[0].rawData?.long_name
+          );
+          const shortName = stripCtrl(
+            userData[0].rawData?.shortName || userData[0].rawData?.short_name
+          );
 
           gatewayInfoMap[gatewayId] = {
             idHex: gatewayId,
@@ -1358,22 +1362,23 @@ const sendGroupedMessage = async (redis, messageId) => {
 
     if (senderInfo) {
       const deviceIdForUrl = senderId ? senderId.substring(1) : "";
-      message += ` (<b></b> ${escapeHtml(senderInfo.longName)} (${escapeHtml(
+      message += ` (${escapeHtml(senderInfo.longName)} (${escapeHtml(
         senderId
       )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>)`;
     } else if (senderId) {
       const deviceIdForUrl = senderId ? senderId.substring(1) : "";
-      message += ` (<b></b> Ноунейм) (${escapeHtml(
+      message += ` (Ноунейм (${escapeHtml(
         senderId
-      )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>`;
+      )}) <a href="https://t.me/MeshtasticTaubeteleComBot?start=${deviceIdForUrl}">📊</a>)`;
     }
 
     message += `\n\n<blockquote expandable>Получено шлюзами <b>(${gateways.length}):</b>\n`;
     gateways.forEach(([gatewayId, info]) => {
       const gateway = gatewayInfoMap[gatewayId];
-      message += `📡 ${escapeHtml(
+      const gwIdForUrl = gatewayId.startsWith("!") ? gatewayId.substring(1) : gatewayId;
+      message += `📡 <a href="https://t.me/MeshtasticTaubeteleComBot?start=${gwIdForUrl}">${escapeHtml(
         gateway?.longName || "Unknown"
-      )} (${escapeHtml(gatewayId)})`;
+      )}</a> (${escapeHtml(gatewayId)})`;
 
       // Check if RSSI or SNR is 0, then show MQTT instead of values
       if (info.rxRssi === 0 || info.rxSnr === 0) {
@@ -1413,7 +1418,9 @@ const sendTelegramMessage = async (message, channelId) => {
     console.error(
       "Error sending telegram message (HTML):",
       error.message,
-      error.response?.description || ""
+      error.response?.description || "",
+      "\nMessage preview:",
+      message.substring(0, 300)
     );
     // Fallback: send without formatting
     try {
@@ -1536,13 +1543,23 @@ export const initializeTelegramBot = (redis) => {
     console.error(`Telegram bot error for ${ctx.updateType}:`, err);
   });
 
-  // Launch bot
-  bot
-    .launch()
-    .then(() => console.log("Telegram bot commands initialized and launched"))
-    .catch((error) =>
-      console.error("Error launching telegram bot:", error.message)
-    );
+  // Resilient bot launch with auto-restart
+  const launchBot = (attempt = 1) => {
+    console.log(`🤖 [Telegram] Запуск поллинга (attempt ${attempt})...`);
+    bot
+      .launch({ dropPendingUpdates: attempt > 1 })
+      .catch((error) => {
+        const is409 = error.message?.includes("409") || error.description?.includes("409");
+        const delay = is409 ? 15000 : 5000;
+        console.error(
+          `❌ [Telegram] Ошибка поллинга:`,
+          error.message,
+          `\n↪️ Перезапуск через ${delay / 1000}с...`
+        );
+        setTimeout(() => launchBot(attempt + 1), delay);
+      });
+  };
+  launchBot();
 
   // Graceful shutdown
   process.once("SIGINT", () => bot.stop("SIGINT"));

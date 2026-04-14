@@ -541,6 +541,12 @@ const MESSAGE_DECODERS = {
     decoder: "User",
     processor: (data) => {
       const { payload, ...clean } = data;
+      const stripCtrl = (s) => (typeof s === "string" ? s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "") : s);
+      if (clean.long_name) clean.long_name = stripCtrl(clean.long_name);
+      if (clean.short_name) clean.short_name = stripCtrl(clean.short_name);
+      if (clean.longName) clean.longName = stripCtrl(clean.longName);
+      if (clean.shortName) clean.shortName = stripCtrl(clean.shortName);
+      if (clean.id) clean.id = stripCtrl(clean.id);
       // Конвертируем Buffer поля в строки
       if (clean.macaddr && Buffer.isBuffer(clean.macaddr)) {
         clean.macaddr = Array.from(clean.macaddr)

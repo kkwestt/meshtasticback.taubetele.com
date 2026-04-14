@@ -12,7 +12,8 @@ export class MQTTManager {
     this.messageHandler = null;
     this.reconnectDelay = RECONNECT_DELAY; // Используем константу из utils
     this.connectionTimeout = 30000;
-    this.keepAliveInterval = 60;
+    this.keepAliveInterval = 120;
+    this.maxReconnectAttempts = 20; // ~10 минут при задержке 30с
   }
 
   /**
@@ -48,8 +49,10 @@ export class MQTTManager {
       console.log(
         `⚠️ [MQTT-Receiver] Ошибки подключения к ${failed.length} серверам:`
       );
-      failed.forEach((result, index) => {
-        console.log(`  - ${servers[index].name}: ${result.reason}`);
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.log(`  - ${servers[index].name}: ${result.reason}`);
+        }
       });
     }
 
@@ -232,10 +235,16 @@ export class MQTTManager {
 
     client.on("reconnect", () => {
       connectionInfo.reconnectAttempts++;
+      if (connectionInfo.reconnectAttempts > this.maxReconnectAttempts) {
+        console.log(
+          `⛔ [MQTT-Receiver] [${server.name}] Достигнут лимит попыток (${this.maxReconnectAttempts}), переподключение остановлено`
+        );
+        client.end(true);
+        return;
+      }
       console.log(
         `🔄 [MQTT-Receiver] [${server.name}] Переподключение... (попытка ${connectionInfo.reconnectAttempts})`
       );
-      // Убрали ограничение на количество попыток - переподключение бесконечно
     });
   }
 

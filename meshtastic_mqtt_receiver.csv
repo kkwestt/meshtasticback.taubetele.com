@@ -1,0 +1,522 @@
+meshtastic_mqtt_receiver
+date,stream,content
+2026/04/14 23:45:04,stdout,🔌 [MQTT-Receiver] [mqtt.meshtastic.org] Соединение закрыто
+
+2026/04/14 23:45:04,stdout,📴 [MQTT-Receiver] [mqtt.meshtastic.org] Оффлайн
+
+2026/04/14 23:45:04,stderr,❌ [MQTT-Receiver] [mqtt.meshtastic.org] MQTT ошибка: Keepalive timeout
+
+2026/04/14 23:45:03,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:45:03,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:45:03,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 15)
+
+2026/04/14 23:45:03,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:45:03,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:45:03,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 15)
+
+2026/04/14 23:45:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:45:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:45:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 15)
+
+2026/04/14 23:44:33,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:44:33,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:44:33,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 14)
+
+2026/04/14 23:44:33,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:44:33,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:44:33,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 14)
+
+2026/04/14 23:44:32,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:44:32,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:44:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 14)
+
+2026/04/14 23:44:03,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:44:03,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:44:03,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:44:03,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:44:02,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 13)
+
+2026/04/14 23:44:02,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 13)
+
+2026/04/14 23:44:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:44:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:44:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 13)
+
+2026/04/14 23:43:40,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:43:40,stdout,"🔍 Getting gateway info for: !deadc0de, !bba833f4, !efffff01, !efffff03, !efffff02, !f98db090
+"
+2026/04/14 23:43:34,stdout,📡 [MQTT-Receiver] [mqtt.meshtastic.org] Подписан на 9 топиков
+
+2026/04/14 23:43:34,stdout,✅ [MQTT-Receiver] [mqtt.meshtastic.org] Подключен
+
+2026/04/14 23:43:33,stdout,🔄 [MQTT-Receiver] [mqtt.meshtastic.org] Переподключение... (попытка 1)
+
+2026/04/14 23:43:32,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:43:32,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:43:32,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 12)
+
+2026/04/14 23:43:32,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:43:32,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:43:32,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 12)
+
+2026/04/14 23:43:32,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:43:32,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:43:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 12)
+
+2026/04/14 23:43:05,stdout,🔌 [MQTT-Receiver] [mqtt.meshtastic.org] Соединение закрыто
+
+2026/04/14 23:43:05,stdout,📴 [MQTT-Receiver] [mqtt.meshtastic.org] Оффлайн
+
+2026/04/14 23:43:05,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:43:05,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 11)
+
+2026/04/14 23:43:05,stderr,❌ [MQTT-Receiver] [mqtt.meshtastic.org] MQTT ошибка: Keepalive timeout
+
+2026/04/14 23:43:05,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:43:02,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:43:05,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:43:02,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 11)
+
+2026/04/14 23:43:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:43:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:43:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 11)
+
+2026/04/14 23:42:46,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:42:46,stdout,"🔍 Getting gateway info for: !04c66d78, !1309d640
+"
+2026/04/14 23:42:43,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:42:43,stdout,"🔍 Getting gateway info for: !1309d640, !1309db84
+"
+2026/04/14 23:42:36,stderr,"Error sending personal message to user ID 14259: request to https://api.telegram.org/bot6521340072:[REDACTED]/sendMessage failed, reason: Client network socket disconnected before secure TLS connection was established
+"
+2026/04/14 23:42:36,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:42:32,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:42:36,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:42:36,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 10)
+
+2026/04/14 23:42:36,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:42:32,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 10)
+
+2026/04/14 23:42:32,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:42:32,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:42:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 10)
+
+2026/04/14 23:42:28,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:42:28,stdout,🔍 Getting gateway info for: !04c66d78
+
+2026/04/14 23:42:21,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:42:21,stdout,🔍 Getting gateway info for: !04c66d78
+
+2026/04/14 23:42:03,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:42:03,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 9)
+
+2026/04/14 23:42:03,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:42:03,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 9)
+
+2026/04/14 23:42:03,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:42:03,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:42:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:42:03,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:42:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 9)
+
+2026/04/14 23:41:59,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:59,stdout,"🔍 Getting gateway info for: !efffff02, !f98db090, !bba83350, !9e9fbbf0
+"
+2026/04/14 23:41:54,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:54,stdout,"🔍 Getting gateway info for: !efffff02, !efffff01, !f98db090, !db2f6ea8, !efffff03, !699ae09c, !deadc0de, !bba83350, !bba833f4, !433c9e98
+"
+2026/04/14 23:41:41,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:41,stdout,"🔍 Getting gateway info for: !efffff02, !f98db090
+"
+2026/04/14 23:41:41,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:40,stdout,"🔍 Getting gateway info for: !deadc0de, !bba833f4
+"
+2026/04/14 23:41:38,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:38,stdout,"🔍 Getting gateway info for: !efffff02, !efffff01, !f98db090, !db2f6ea8, !efffff03, !699ae09c, !deadc0de, !bba83350, !bba833f4
+"
+2026/04/14 23:41:33,stdout,📡 [MQTT-Receiver] [mqtt.meshtastic.org] Подписан на 9 топиков
+
+2026/04/14 23:41:33,stdout,✅ [MQTT-Receiver] [mqtt.meshtastic.org] Подключен
+
+2026/04/14 23:41:33,stdout,🔄 [MQTT-Receiver] [mqtt.meshtastic.org] Переподключение... (попытка 1)
+
+2026/04/14 23:41:32,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:41:32,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:41:32,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 8)
+
+2026/04/14 23:41:32,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:41:32,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:41:32,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 8)
+
+2026/04/14 23:41:32,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:41:32,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:41:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 8)
+
+2026/04/14 23:41:25,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:25,stdout,🔍 Getting gateway info for: !1309db84
+
+2026/04/14 23:41:03,stdout,🔌 [MQTT-Receiver] [mqtt.meshtastic.org] Соединение закрыто
+
+2026/04/14 23:41:03,stdout,📴 [MQTT-Receiver] [mqtt.meshtastic.org] Оффлайн
+
+2026/04/14 23:41:03,stderr,❌ [MQTT-Receiver] [mqtt.meshtastic.org] MQTT ошибка: Keepalive timeout
+
+2026/04/14 23:41:02,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:41:02,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:41:02,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 7)
+
+2026/04/14 23:41:02,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:41:02,stdout,"🔍 Getting gateway info for: !1309db84, !433c9e98, !1309d640, !efffff01, !f98db090, !efffff02, !bba833f4, !efffff03, !deadc0de
+"
+2026/04/14 23:41:02,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:41:02,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:41:02,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 7)
+
+2026/04/14 23:41:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:41:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:41:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 7)
+
+2026/04/14 23:40:49,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:40:49,stdout,"🔍 Getting gateway info for: !1309db84, !1309d640, !433c9e98, !04c66d78, !699ae09c, !bba833f4, !deadc0de
+"
+2026/04/14 23:40:47,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:40:47,stdout,"🔍 Getting gateway info for: !1309d640, !433c9e98, !db2f6ea8, !04c66d78
+"
+2026/04/14 23:40:32,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:40:32,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:40:32,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 6)
+
+2026/04/14 23:40:32,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:40:32,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:40:32,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 6)
+
+2026/04/14 23:40:32,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:40:32,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:40:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 6)
+
+2026/04/14 23:40:31,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:40:31,stdout,"🔍 Getting gateway info for: !bba83350, !9e9fbbf0
+"
+2026/04/14 23:40:20,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:40:20,stdout,"🔍 Getting gateway info for: !1309db84, !1309d640, !433c9e98, !04c66d78, !699ae09c
+"
+2026/04/14 23:40:02,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:40:02,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:40:02,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 5)
+
+2026/04/14 23:40:02,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:40:02,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:40:02,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 5)
+
+2026/04/14 23:40:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:40:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:40:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 5)
+
+2026/04/14 23:39:57,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:39:57,stdout,🔍 Getting gateway info for: !deadc0de
+
+2026/04/14 23:39:36,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:39:32,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:39:36,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:39:36,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 4)
+
+2026/04/14 23:39:36,stdout,📡 [MQTT-Receiver] [mqtt.meshtastic.org] Подписан на 9 топиков
+
+2026/04/14 23:39:36,stdout,✅ [MQTT-Receiver] [mqtt.meshtastic.org] Подключен
+
+2026/04/14 23:39:36,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:39:36,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 4)
+
+2026/04/14 23:39:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshtastic.org] Переподключение... (попытка 1)
+
+2026/04/14 23:39:32,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:39:32,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:39:32,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 4)
+
+2026/04/14 23:39:02,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:39:02,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:39:02,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 3)
+
+2026/04/14 23:39:02,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:39:02,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 3)
+
+2026/04/14 23:39:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshtastic.org] Соединение закрыто
+
+2026/04/14 23:39:02,stdout,📴 [MQTT-Receiver] [mqtt.meshtastic.org] Оффлайн
+
+2026/04/14 23:39:02,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:39:02,stderr,❌ [MQTT-Receiver] [mqtt.meshtastic.org] MQTT ошибка: Keepalive timeout
+
+2026/04/14 23:39:02,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:39:02,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:39:02,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 3)
+
+2026/04/14 23:38:51,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:38:51,stdout,🔍 Getting gateway info for: !1309db84
+
+2026/04/14 23:38:39,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:38:39,stdout,🔍 Getting gateway info for: !04c66d78
+
+2026/04/14 23:38:37,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:38:37,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:38:37,stdout,"🔍 Getting gateway info for: !433c9e98, !1309d640, !1309db84, !04c66d78
+"
+2026/04/14 23:38:32,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:38:37,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:38:32,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:38:31,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 2)
+
+2026/04/14 23:38:31,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:38:31,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:38:31,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 2)
+
+2026/04/14 23:38:31,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 2)
+
+2026/04/14 23:38:18,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:38:18,stdout,"🔍 Getting gateway info for: !1309d640, !04c66d78
+"
+2026/04/14 23:38:06,stdout,⏰ [MQTT-Receiver] [mqtt.mess.host] Таймаут подключения
+
+2026/04/14 23:38:06,stdout,⏰ [MQTT-Receiver] [mqtt.meshnet.nl] Таймаут подключения
+
+2026/04/14 23:38:06,stdout,⏰ [MQTT-Receiver] [mqtt.pa8f.nl] Таймаут подключения
+
+2026/04/14 23:38:01,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:38:01,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:38:01,stdout,🔄 [MQTT-Receiver] [mqtt.mess.host] Переподключение... (попытка 1)
+
+2026/04/14 23:38:01,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:38:01,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:38:01,stdout,🔄 [MQTT-Receiver] [mqtt.meshnet.nl] Переподключение... (попытка 1)
+
+2026/04/14 23:38:01,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:38:01,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:38:01,stdout,🔄 [MQTT-Receiver] [mqtt.pa8f.nl] Переподключение... (попытка 1)
+
+2026/04/14 23:37:55,stdout,📨 Sending message to Telegram channel -1001907680082
+
+2026/04/14 23:37:55,stdout,🔍 Getting gateway info for: !1309d640
+
+2026/04/14 23:37:33,stdout,📨 Sending personal message to user ID 14259
+
+2026/04/14 23:37:32,stdout,✅ [MQTT-Receiver] Инициализация завершена успешно!
+
+2026/04/14 23:37:32,stdout,✅ [MQTT-Receiver] MQTT подключения установлены: 4/7
+
+2026/04/14 23:37:32,stdout,==================================================
+
+2026/04/14 23:37:32,stdout,
+
+2026/04/14 23:37:32,stdout,🎧 [MQTT-Receiver] Прослушивание сети Meshtastic со всех серверов...
+
+2026/04/14 23:37:32,stdout,🌐 [MQTT-Receiver] Подключено к 4/7 серверам
+
+2026/04/14 23:37:32,stdout,
+
+2026/04/14 23:37:32,stdout,  - mqtt.meshtastic.org: Error: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:37:32,stdout,  - mqtt.bircom.in: Error: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:37:32,stdout,  - meshtastic.taubetele.com: Error: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:37:32,stdout,⚠️ [MQTT-Receiver] Ошибки подключения к 3 серверам:
+
+2026/04/14 23:37:32,stdout,📡 [MQTT-Receiver] [mqtt.bircom.in] Подписан на 9 топиков
+
+2026/04/14 23:37:32,stdout,✅ [MQTT-Receiver] [mqtt.bircom.in] Подключен
+
+2026/04/14 23:37:32,stdout,📡 [MQTT-Receiver] [mqtt.meshtastic.org] Подписан на 9 топиков
+
+2026/04/14 23:37:32,stdout,📡 [MQTT-Receiver] [mthub.monteops.com] Подписан на 9 топиков
+
+2026/04/14 23:37:32,stdout,✅ [MQTT-Receiver] [mqtt.meshtastic.org] Подключен
+
+2026/04/14 23:37:32,stdout,✅ [MQTT-Receiver] [mthub.monteops.com] Подключен
+
+2026/04/14 23:37:32,stdout,📡 [MQTT-Receiver] [meshtastic.taubetele.com] Подписан на 9 топиков
+
+2026/04/14 23:37:32,stdout,✅ [MQTT-Receiver] [meshtastic.taubetele.com] Подключен
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Соединение закрыто
+
+2026/04/14 23:37:31,stdout,📴 [MQTT-Receiver] [mqtt.mess.host] Оффлайн
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Соединение закрыто
+
+2026/04/14 23:37:31,stdout,📴 [MQTT-Receiver] [mqtt.meshnet.nl] Оффлайн
+
+2026/04/14 23:37:31,stderr,❌ [MQTT-Receiver] [mqtt.meshnet.nl] MQTT ошибка: connect ECONNREFUSED 127.0.0.1:1883
+
+2026/04/14 23:37:31,stderr,❌ [MQTT-Receiver] [mqtt.mess.host] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.mess.host
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Соединение закрыто
+
+2026/04/14 23:37:31,stdout,📴 [MQTT-Receiver] [mqtt.pa8f.nl] Оффлайн
+
+2026/04/14 23:37:31,stderr,❌ [MQTT-Receiver] [mqtt.pa8f.nl] MQTT ошибка: getaddrinfo ENOTFOUND mqtt.pa8f.nl
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.mess.host] Подключение...
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mthub.monteops.com] Подключение...
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.meshnet.nl] Подключение...
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.pa8f.nl] Подключение...
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.meshtastic.org] Подключение...
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [mqtt.bircom.in] Подключение...
+
+2026/04/14 23:37:31,stdout,🔌 [MQTT-Receiver] [meshtastic.taubetele.com] Подключение...
+
+2026/04/14 23:37:31,stdout,
+
+2026/04/14 23:37:31,stdout,🚀 [MQTT-Receiver] Подключение к 7 серверам...
+
+2026/04/14 23:37:31,stdout,✅ [MQTT-Receiver] Telegram бот инициализирован успешно
+
+2026/04/14 23:37:31,stdout,🤖 [MQTT-Receiver] Инициализация Telegram бота...
+
+2026/04/14 23:37:31,stdout,✅ [MQTT-Receiver] Redis подключен и настроен (попытка 1)
+
+2026/04/14 23:37:31,stdout,✅ [MQTT-Receiver] Connected to Redis
+
+2026/04/14 23:37:31,stdout,🔄 [MQTT-Receiver] Подключение к Redis...
+
+2026/04/14 23:37:31,stdout,✅ [MQTT-Receiver] Protobuf схемы успешно загружены
+
+2026/04/14 23:37:30,stdout,Текущая директория: /app
+
+2026/04/14 23:37:30,stdout,Проверяю protobufs по пути: /app/protobufs/meshtastic/mqtt.proto
+
+2026/04/14 23:37:30,stdout,🚀 [MQTT-Receiver] Инициализация MQTT Receiver...
+
+2026/04/14 23:37:30,stdout,  🌐 mqtt.mess.host (mqtt://meshdev:large4cats@mqtt.mess.host)
+
+2026/04/14 23:37:30,stdout,  🌐 mthub.monteops.com (mqtt://mthub.monteops.com)
+
+2026/04/14 23:37:30,stdout,  🌐 mqtt.meshnet.nl (mqtt://boreft:meshboreft@mqtt.meshnet.nl)
+
+2026/04/14 23:37:30,stdout,  🌐 mqtt.pa8f.nl (mqtt://boreft:meshboreft@mqtt.pa8f.nl)
+
+2026/04/14 23:37:30,stdout,  🌐 mqtt.meshtastic.org (mqtt://meshdev:large4cats@mqtt.meshtastic.org:1883)
+
+2026/04/14 23:37:30,stdout,  🌐 mqtt.bircom.in (mqtt://uplink:uplink@mqtt.bircom.in)
+
+2026/04/14 23:37:30,stdout,  🌐 meshtastic.taubetele.com (mqtt://meshdev:large4cats@meshtastic.taubetele.com)
+
+2026/04/14 23:37:30,stdout,📡 Подключение к 7 серверам:
+
+2026/04/14 23:37:30,stdout,🚀 [MQTT-Receiver] Запуск MQTT Receiver сервиса...
+
