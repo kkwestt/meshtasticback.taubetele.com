@@ -1342,6 +1342,7 @@ const sendGroupedMessage = async (redis, messageId) => {
       }
     }
 
+    messageText = messageText.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
     let message = `${escapeHtml(messageText)}`;
 
     // Get sender info using event.from (actual sender), not event.gatewayId (receiver gateway)
@@ -1409,7 +1410,11 @@ const sendTelegramMessage = async (message, channelId) => {
     });
     console.log(`✅ Message sent to Telegram successfully`);
   } catch (error) {
-    console.error("Error sending telegram message:", error.message);
+    console.error(
+      "Error sending telegram message (HTML):",
+      error.message,
+      error.response?.description || ""
+    );
     // Fallback: send without formatting
     try {
       await bot.telegram.sendMessage(

@@ -579,7 +579,7 @@ const MESSAGE_DECODERS = {
     type: "message",
     decoder: null,
     processor: (data, payload) => ({
-      text: new TextDecoder().decode(payload),
+      text: new TextDecoder().decode(payload).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ""),
     }),
   },
   [PortNum.MAP_REPORT_APP]: {

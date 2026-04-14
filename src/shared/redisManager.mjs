@@ -24,6 +24,11 @@ export class RedisManager {
     this.indexCache = new Map();
     this.indexCacheTTL = 10000; // 10 секунд
 
+    // Защита от конкурентных pipeline и утечки памяти
+    this._pipelineRunning = new Set();
+    this._inMemCache = new Map();
+    this._inMemCacheTTL = 35000; // 35 секунд
+
     this.setupEventHandlers();
   }
 
@@ -42,6 +47,16 @@ export class RedisManager {
     this.redis.on("reconnecting", () => {
       console.log(`🔄 [${this.serviceName}] Reconnecting to Redis...`);
     });
+  }
+
+  _memCacheGet(key) {
+    const entry = this._inMemCache.get(key);
+    if (entry && Date.now() - entry.ts < this._inMemCacheTTL) return entry.data;
+    return null;
+  }
+
+  _memCacheSet(key, data) {
+    this._inMemCache.set(key, { data, ts: Date.now() });
   }
 
   /**
@@ -685,6 +700,13 @@ export class RedisManager {
    * Получает все данные точек для карты
    */
   async getAllDotData() {
+    const _key = 'allDots';
+    const _memHit = this._memCacheGet(_key);
+    if (_memHit) return _memHit;
+    if (this._pipelineRunning.has(_key)) {
+      return this._inMemCache.get(_key)?.data || {};
+    }
+    this._pipelineRunning.add(_key);
     try {
       const deviceIds = await this.getActiveDeviceIds();
 
@@ -757,6 +779,7 @@ export class RedisManager {
         }
       }
 
+      this._memCacheSet(_key, allDots);
       return allDots;
     } catch (error) {
       console.error(
@@ -764,6 +787,8 @@ export class RedisManager {
         error.message
       );
       return {};
+    } finally {
+      this._pipelineRunning.delete(_key);
     }
   }
 
@@ -872,13 +897,22 @@ export class RedisManager {
    * Получает оптимизированные данные точек для карты
    */
   async getOptimizedDotData() {
+    const _key = 'optimizedDots';
+    const _memHit = this._memCacheGet(_key);
+    if (_memHit) return _memHit;
+    if (this._pipelineRunning.has(_key)) {
+      return this._inMemCache.get(_key)?.data || {};
+    }
+    this._pipelineRunning.add(_key);
     try {
       const startTime = Date.now();
       const cacheKey = "optimized_dots_cache";
-      const cached = await this.redis.get(cacheKey);
+      const cached = await this.redis.get(cacheKey).catch(() => null);
 
       if (cached) {
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        this._memCacheSet(_key, parsed);
+        return parsed;
       }
 
       const deviceIds = await this.getActiveDeviceIds();
@@ -953,7 +987,8 @@ export class RedisManager {
         }
       }
 
-      await this.redis.setex(cacheKey, 30, JSON.stringify(optimizedDots));
+      await this.redis.setex(cacheKey, 30, JSON.stringify(optimizedDots)).catch(() => {});
+      this._memCacheSet(_key, optimizedDots);
       return optimizedDots;
     } catch (error) {
       console.error(
@@ -961,6 +996,8 @@ export class RedisManager {
         error.message
       );
       return {};
+    } finally {
+      this._pipelineRunning.delete(_key);
     }
   }
 
@@ -968,13 +1005,22 @@ export class RedisManager {
    * Получает данные для карты в минимальном формате
    */
   async getMapData() {
+    const _key = 'mapData';
+    const _memHit = this._memCacheGet(_key);
+    if (_memHit) return _memHit;
+    if (this._pipelineRunning.has(_key)) {
+      return this._inMemCache.get(_key)?.data || {};
+    }
+    this._pipelineRunning.add(_key);
     try {
       const startTime = Date.now();
       const cacheKey = "map_data_cache";
-      const cached = await this.redis.get(cacheKey);
+      const cached = await this.redis.get(cacheKey).catch(() => null);
 
       if (cached) {
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        this._memCacheSet(_key, parsed);
+        return parsed;
       }
 
       const deviceIds = await this.getActiveDeviceIds();
@@ -990,7 +1036,6 @@ export class RedisManager {
       // Выполняем pipeline с обработкой таймаутов
       let results;
       try {
-        // Используем Promise.race для добавления таймаута на уровне приложения
         const pipelinePromise = pipeline.exec();
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
@@ -1001,9 +1046,9 @@ export class RedisManager {
         });
         try {
           results = await Promise.race([pipelinePromise, timeoutPromise]);
-          clearTimeout(timeoutId); // Очищаем таймаут если pipeline выполнился успешно
+          clearTimeout(timeoutId);
         } catch (error) {
-          clearTimeout(timeoutId); // Очищаем таймаут при ошибке
+          clearTimeout(timeoutId);
           throw error;
         }
       } catch (error) {
@@ -1011,8 +1056,7 @@ export class RedisManager {
           `[${this.serviceName}] Pipeline execution failed in getMapData:`,
           error.message
         );
-        // Возвращаем пустой объект при критической ошибке pipeline
-        return {};
+        throw error;
       }
 
       const mapData = {};
@@ -1020,7 +1064,6 @@ export class RedisManager {
       for (let i = 0; i < results.length; i++) {
         const [err, values] = results[i];
         if (err) {
-          // Логируем ошибки для отдельных устройств
           console.error(
             `[${this.serviceName}] Error getting map data for device ${deviceIds[i]}:`,
             err.message || err
@@ -1038,7 +1081,8 @@ export class RedisManager {
         }
       }
 
-      await this.redis.setex(cacheKey, 30, JSON.stringify(mapData));
+      await this.redis.setex(cacheKey, 30, JSON.stringify(mapData)).catch(() => {});
+      this._memCacheSet(_key, mapData);
       return mapData;
     } catch (error) {
       console.error(
@@ -1046,6 +1090,8 @@ export class RedisManager {
         error.message
       );
       return {};
+    } finally {
+      this._pipelineRunning.delete(_key);
     }
   }
 
