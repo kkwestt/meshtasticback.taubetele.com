@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  # Redis сервис (общий для всех)
+  redis:
+    image: redis:8-alpine
+    container_name: meshtastic_redis
+    restart: unless-stopped
+    # maxmemory 4gb - лимит после загрузки данных (политика allkeys-lru удалит старые данные при превышении)
+    # mem_limit 5gb - лимит контейнера (больше maxmemory для загрузки RDB файла)
+    command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000
+    # environment:
+    #   - REDIS_DISABLE_MEMORY_WARNING=1
+    ports:
+      - "6379:6379"
+    volumes:
+      - /volume2/docker/meshtastic_redis:/data
+    mem_limit: 5g
+
+  # Xray-core VLESS proxy (для Telegram бота)
+  xray:
+    image: ghcr.io/xtls/xray-core:latest
+    container_name: meshtastic_xray
+    restart: unless-stopped
+    command: ["run", "-config", "/etc/xray/config.json"]
+    volumes:
+      - ./xray/config.json:/etc/xray/config.json:ro
+    ports:
+      - "10808:10808"
+
+  # MQTT Receiver сервис (приём и обработка MQTT данных)
+  mqtt-receiver:
+    build:
+      context: .
+      dockerfile: ./mqtt-receiver/Dockerfile
+    container_name: meshtastic_mqtt_receiver
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - xray
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Ограничиваем память для Node.js до 1GB
+      - NODE_OPTIONS=--max-old-space-size=1024
+      # Управление Telegram ботом (true/false)
+      - TELEGRAM_ENABLED=true
+      # Прокси для Telegram бота через xray VLESS
+      - TELEGRAM_PROXY_URL=socks5://xray:10808
+      # Отключение статистических логов
+      - STATS_LOGGING_ENABLED=false
+    volumes:
+      - ./protobufs:/app/protobufs:ro
+    mem_limit: 1g
+
+  # Основной сервис (HTTP API и Telegram бот)
+  meshtasticback_taubetele_com_81:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meshtasticback_taubetele_com_81
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "81:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Ограничиваем память для Node.js до 1GB
+      - NODE_OPTIONS=--max-old-space-size=1600
+    # Ограничиваем ресурсы контейнера
+    mem_limit: 2g
+    mem_reservation: 512m
+    volumes:
+      - ./logs:/app/logs
+      - ./config.mjs:/app/config.mjs:ro
+# Постоянное хранилище для Redis теперь использует /volume2/docker/meshtastic_redis/
