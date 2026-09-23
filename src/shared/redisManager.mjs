@@ -29,6 +29,14 @@ export class RedisManager {
     this._inMemCache = new Map();
     this._inMemCacheTTL = 35000; // 35 секунд
 
+    // Single-flight: параллельные запросы к одному тяжёлому набору данных
+    // ждут один общий промис вместо запуска дублирующих pipeline
+    this._inFlight = new Map();
+
+    // Максимальный размер одного pipeline (чтобы не собирать в памяти
+    // десятки тысяч команд и их результатов одновременно)
+    this.pipelineChunkSize = 1000;
+
     this.setupEventHandlers();
   }
 
@@ -57,6 +65,92 @@ export class RedisManager {
 
   _memCacheSet(key, data) {
     this._inMemCache.set(key, { data, ts: Date.now() });
+  }
+
+  /**
+   * Выполняет pipeline порциями, чтобы не держать в памяти
+   * сразу все команды и результаты (основная причина скачков heap).
+   * @param {Array} items - элементы, по одному на команду
+   * @param {Function} addCommand - (pipeline, item) => void
+   * @param {Function} onResult - (err, value, item, index) => void
+   */
+  async _runChunkedPipeline(items, addCommand, onResult) {
+    const chunkSize = this.pipelineChunkSize;
+
+    for (let offset = 0; offset < items.length; offset += chunkSize) {
+      const chunk = items.slice(offset, offset + chunkSize);
+      const pipeline = this.redis.pipeline();
+
+      for (const item of chunk) {
+        addCommand(pipeline, item);
+      }
+
+      const results = await pipeline.exec();
+      if (!results) continue;
+
+      for (let i = 0; i < results.length; i++) {
+        const [err, value] = results[i];
+        onResult(err, value, chunk[i], offset + i);
+      }
+    }
+  }
+
+  /**
+   * Кэш готовой JSON-строки: память -> Redis -> построение.
+   *
+   * Строка отдаётся клиенту как есть, без JSON.parse/JSON.stringify
+   * на каждый запрос — это убирает основной источник больших
+   * короткоживущих аллокаций в heap.
+   *
+   * @param {string} memKey - ключ in-memory кэша
+   * @param {string} redisKey - ключ кэша в Redis
+   * @param {number} ttlSeconds - TTL кэша в Redis
+   * @param {Function} build - () => Promise<Object> построение данных
+   * @returns {Promise<{json: string, count: number}>}
+   */
+  async _getCachedJson(memKey, redisKey, ttlSeconds, build) {
+    const cached = this._memCacheGet(memKey);
+    if (cached) return cached;
+
+    const inFlight = this._inFlight.get(memKey);
+    if (inFlight) return inFlight;
+
+    const promise = (async () => {
+      const countKey = `${redisKey}:count`;
+      const [json, count] = await this.redis
+        .mget(redisKey, countKey)
+        .catch(() => [null, null]);
+
+      if (json) {
+        const entry = { json, count: Number(count) || 0 };
+        this._memCacheSet(memKey, entry);
+        return entry;
+      }
+
+      const data = await build();
+      const entry = {
+        json: JSON.stringify(data),
+        count: Object.keys(data).length,
+      };
+
+      await this.redis
+        .pipeline()
+        .setex(redisKey, ttlSeconds, entry.json)
+        .setex(countKey, ttlSeconds, String(entry.count))
+        .exec()
+        .catch(() => {});
+
+      this._memCacheSet(memKey, entry);
+      return entry;
+    })();
+
+    this._inFlight.set(memKey, promise);
+
+    try {
+      return await promise;
+    } finally {
+      this._inFlight.delete(memKey);
+    }
   }
 
   /**
@@ -516,9 +610,12 @@ export class RedisManager {
   /**
    * Использует SCAN вместо keys() для безопасного поиска ключей
    */
-  async _scanKeys(pattern, batchSize = 100) {
+  async _scanKeys(pattern, batchSize = 500, maxKeys = 200000) {
     const keys = [];
-    let cursor = 0;
+    // ВАЖНО: Redis возвращает курсор строкой ("0" в конце обхода).
+    // Сравнение с числом 0 давало бесконечный цикл с бесконечным
+    // ростом массива keys — это приводило к OOM процесса.
+    let cursor = "0";
 
     do {
       const [newCursor, foundKeys] = await this.redis.scan(
@@ -528,9 +625,19 @@ export class RedisManager {
         "COUNT",
         batchSize
       );
-      cursor = newCursor;
-      keys.push(...foundKeys);
-    } while (cursor !== 0);
+      cursor = String(newCursor);
+
+      for (const key of foundKeys) {
+        keys.push(key);
+      }
+
+      if (keys.length >= maxKeys) {
+        console.warn(
+          `[${this.serviceName}] SCAN ${pattern}: достигнут лимит ${maxKeys} ключей, обход прерван`
+        );
+        break;
+      }
+    } while (cursor !== "0");
 
     return keys;
   }
@@ -539,6 +646,30 @@ export class RedisManager {
    * Получает статистику по portnum (использует SCAN)
    */
   async getPortnumStats() {
+    // Полное сканирование keyspace — самая дорогая операция сервиса,
+    // поэтому результат кэшируется (память + Redis) и считается
+    // не чаще одного раза на TTL, с защитой от параллельных запусков.
+    try {
+      const { json } = await this._getCachedJson(
+        "portnumStats",
+        "portnum_stats_cache",
+        300,
+        () => this._buildPortnumStats()
+      );
+      return JSON.parse(json);
+    } catch (error) {
+      console.error(
+        `[${this.serviceName}] Error getting portnum stats:`,
+        error.message
+      );
+      return {};
+    }
+  }
+
+  /**
+   * Считает статистику по portnum (полный SCAN, без кэша)
+   */
+  async _buildPortnumStats() {
     try {
       const stats = {};
       const portnumNames = [
@@ -562,16 +693,19 @@ export class RedisManager {
         };
 
         if (keys.length > 0) {
-          const operations = keys.map((key) => ({
-            command: "llen",
-            args: [key],
-          }));
+          let totalMessages = 0;
 
-          const lengths = await executeRedisPipeline(this.redis, operations);
-          stats[portnumName].totalMessages = lengths.reduce(
-            (sum, len) => sum + len,
-            0
+          await this._runChunkedPipeline(
+            keys,
+            (pipeline, key) => pipeline.llen(key),
+            (err, length) => {
+              if (!err && typeof length === "number") {
+                totalMessages += length;
+              }
+            }
           );
+
+          stats[portnumName].totalMessages = totalMessages;
         }
       }
 
@@ -894,34 +1028,19 @@ export class RedisManager {
   }
 
   /**
-   * Получает оптимизированные данные точек для карты
+   * Строит оптимизированные данные точек для карты (без кэша)
    */
-  async getOptimizedDotData() {
-    const _key = 'optimizedDots';
-    const _memHit = this._memCacheGet(_key);
-    if (_memHit) return _memHit;
-    if (this._pipelineRunning.has(_key)) {
-      return this._inMemCache.get(_key)?.data || {};
+  async _buildOptimizedDotData() {
+    const deviceIds = await this.getActiveDeviceIds();
+    if (deviceIds.length === 0) {
+      return {};
     }
-    this._pipelineRunning.add(_key);
-    try {
-      const startTime = Date.now();
-      const cacheKey = "optimized_dots_cache";
-      const cached = await this.redis.get(cacheKey).catch(() => null);
 
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        this._memCacheSet(_key, parsed);
-        return parsed;
-      }
+    const optimizedDots = {};
 
-      const deviceIds = await this.getActiveDeviceIds();
-      if (deviceIds.length === 0) {
-        return {};
-      }
-
-      const pipeline = this.redis.pipeline();
-      deviceIds.forEach((deviceId) => {
+    await this._runChunkedPipeline(
+      deviceIds,
+      (pipeline, deviceId) =>
         pipeline.hmget(
           `dots:${deviceId}`,
           "longName",
@@ -930,53 +1049,19 @@ export class RedisManager {
           "latitude",
           "s_time",
           "mqtt"
-        );
-      });
-
-      // Выполняем pipeline с обработкой таймаутов
-      let results;
-      try {
-        // Используем Promise.race для добавления таймаута на уровне приложения
-        const pipelinePromise = pipeline.exec();
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error("Pipeline timeout after 30 seconds")),
-            30000
-          );
-        });
-        try {
-          results = await Promise.race([pipelinePromise, timeoutPromise]);
-          clearTimeout(timeoutId); // Очищаем таймаут если pipeline выполнился успешно
-        } catch (error) {
-          clearTimeout(timeoutId); // Очищаем таймаут при ошибке
-          throw error;
-        }
-      } catch (error) {
-        console.error(
-          `[${this.serviceName}] Pipeline execution failed:`,
-          error.message
-        );
-        // Возвращаем пустой объект при критической ошибке pipeline
-        return {};
-      }
-
-      const optimizedDots = {};
-
-      for (let i = 0; i < results.length; i++) {
-        const [err, values] = results[i];
+        ),
+      (err, values, deviceId) => {
         if (err) {
-          // Логируем ошибки для отдельных устройств
           console.error(
-            `[${this.serviceName}] Error getting data for device ${deviceIds[i]}:`,
+            `[${this.serviceName}] Error getting data for device ${deviceId}:`,
             err.message || err
           );
-          continue;
+          return;
         }
 
         const [longName, shortName, longitude, latitude, s_time, mqtt] = values;
         if (longitude && latitude) {
-          optimizedDots[deviceIds[i]] = {
+          optimizedDots[deviceId] = {
             longName: longName || "",
             shortName: shortName || "",
             longitude: parseFloat(longitude),
@@ -986,113 +1071,168 @@ export class RedisManager {
           };
         }
       }
+    );
 
-      await this.redis.setex(cacheKey, 30, JSON.stringify(optimizedDots)).catch(() => {});
-      this._memCacheSet(_key, optimizedDots);
-      return optimizedDots;
+    return optimizedDots;
+  }
+
+  /**
+   * Получает оптимизированные данные точек для карты как готовую JSON-строку
+   * @returns {Promise<{json: string, count: number}>}
+   */
+  async getOptimizedDotDataJSON() {
+    try {
+      return await this._getCachedJson(
+        "optimizedDots",
+        "optimized_dots_cache",
+        30,
+        () => this._buildOptimizedDotData()
+      );
     } catch (error) {
       console.error(
         `[${this.serviceName}] Error getting optimized dot data:`,
         error.message
       );
-      return {};
-    } finally {
-      this._pipelineRunning.delete(_key);
+      return { json: "{}", count: 0 };
     }
   }
 
   /**
-   * Получает данные для карты в минимальном формате
+   * Получает оптимизированные данные точек для карты (объект)
    */
-  async getMapData() {
-    const _key = 'mapData';
-    const _memHit = this._memCacheGet(_key);
-    if (_memHit) return _memHit;
-    if (this._pipelineRunning.has(_key)) {
-      return this._inMemCache.get(_key)?.data || {};
+  async getOptimizedDotData() {
+    const { json } = await this.getOptimizedDotDataJSON();
+    return JSON.parse(json);
+  }
+
+  /**
+   * Строит данные для карты в минимальном формате (без кэша)
+   */
+  async _buildMapData() {
+    const deviceIds = await this.getActiveDeviceIds();
+    if (deviceIds.length === 0) {
+      return {};
     }
-    this._pipelineRunning.add(_key);
-    try {
-      const startTime = Date.now();
-      const cacheKey = "map_data_cache";
-      const cached = await this.redis.get(cacheKey).catch(() => null);
 
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        this._memCacheSet(_key, parsed);
-        return parsed;
-      }
+    const mapData = {};
 
-      const deviceIds = await this.getActiveDeviceIds();
-      if (deviceIds.length === 0) {
-        return {};
-      }
-
-      const pipeline = this.redis.pipeline();
-      deviceIds.forEach((deviceId) => {
-        pipeline.hmget(`dots:${deviceId}`, "longitude", "latitude", "s_time");
-      });
-
-      // Выполняем pipeline с обработкой таймаутов
-      let results;
-      try {
-        const pipelinePromise = pipeline.exec();
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error("Pipeline timeout after 30 seconds")),
-            30000
-          );
-        });
-        try {
-          results = await Promise.race([pipelinePromise, timeoutPromise]);
-          clearTimeout(timeoutId);
-        } catch (error) {
-          clearTimeout(timeoutId);
-          throw error;
-        }
-      } catch (error) {
-        console.error(
-          `[${this.serviceName}] Pipeline execution failed in getMapData:`,
-          error.message
-        );
-        throw error;
-      }
-
-      const mapData = {};
-
-      for (let i = 0; i < results.length; i++) {
-        const [err, values] = results[i];
+    await this._runChunkedPipeline(
+      deviceIds,
+      (pipeline, deviceId) =>
+        pipeline.hmget(`dots:${deviceId}`, "longitude", "latitude", "s_time"),
+      (err, values, deviceId) => {
         if (err) {
           console.error(
-            `[${this.serviceName}] Error getting map data for device ${deviceIds[i]}:`,
+            `[${this.serviceName}] Error getting map data for device ${deviceId}:`,
             err.message || err
           );
-          continue;
+          return;
         }
 
         const [longitude, latitude, s_time] = values;
         if (longitude && latitude) {
-          mapData[deviceIds[i]] = {
+          mapData[deviceId] = {
             lon: parseFloat(longitude),
             lat: parseFloat(latitude),
             t: s_time ? parseInt(s_time) : 0,
           };
         }
       }
+    );
 
-      await this.redis.setex(cacheKey, 30, JSON.stringify(mapData)).catch(() => {});
-      this._memCacheSet(_key, mapData);
-      return mapData;
+    return mapData;
+  }
+
+  /**
+   * Получает данные для карты в минимальном формате как готовую JSON-строку
+   * @returns {Promise<{json: string, count: number}>}
+   */
+  async getMapDataJSON() {
+    try {
+      return await this._getCachedJson("mapData", "map_data_cache", 30, () =>
+        this._buildMapData()
+      );
     } catch (error) {
       console.error(
         `[${this.serviceName}] Error getting map data:`,
         error.message
       );
-      return {};
-    } finally {
-      this._pipelineRunning.delete(_key);
+      return { json: "{}", count: 0 };
     }
+  }
+
+  /**
+   * Получает данные для карты в минимальном формате (объект)
+   */
+  async getMapData() {
+    const { json } = await this.getMapDataJSON();
+    return JSON.parse(json);
+  }
+
+  /**
+   * Получает данные meshcore-устройств как готовую JSON-строку
+   * @returns {Promise<{json: string, count: number}>}
+   */
+  async getMeshcoreDotsJSON() {
+    try {
+      return await this._getCachedJson(
+        "meshcoreDots",
+        "dots_meshcore_cache",
+        30,
+        () => this._buildMeshcoreDots()
+      );
+    } catch (error) {
+      console.error(
+        `[${this.serviceName}] Error getting meshcore dots:`,
+        error.message
+      );
+      return { json: "{}", count: 0 };
+    }
+  }
+
+  /**
+   * Строит данные meshcore-устройств из ключей dots_meshcore:* (без кэша)
+   */
+  async _buildMeshcoreDots() {
+    const keys = await this._scanKeys("dots_meshcore:*", 500);
+    if (keys.length === 0) {
+      return {};
+    }
+
+    const result = {};
+
+    await this._runChunkedPipeline(
+      keys,
+      (pipeline, key) => pipeline.hgetall(key),
+      (err, hashData, key) => {
+        if (err || !hashData || Object.keys(hashData).length === 0) return;
+
+        const deviceId = key.replace("dots_meshcore:", "");
+        const parsedData = {};
+
+        for (const [field, value] of Object.entries(hashData)) {
+          try {
+            parsedData[field] = JSON.parse(value);
+          } catch {
+            // Для координат: пустые строки и "0" преобразуем в null для согласованности
+            if (
+              (field === "lat" || field === "lon") &&
+              (value === "" || value === "0")
+            ) {
+              parsedData[field] = null;
+            } else if (!isNaN(value) && value !== "") {
+              parsedData[field] = Number(value);
+            } else {
+              parsedData[field] = value;
+            }
+          }
+        }
+
+        result[deviceId] = parsedData;
+      }
+    );
+
+    return result;
   }
 
   /**
@@ -1102,8 +1242,13 @@ export class RedisManager {
     try {
       const pipeline = this.redis.pipeline();
       pipeline.del("optimized_dots_cache");
+      pipeline.del("optimized_dots_cache:count");
       pipeline.del("map_data_cache");
+      pipeline.del("map_data_cache:count");
       await pipeline.exec();
+
+      this._inMemCache.delete("optimizedDots");
+      this._inMemCache.delete("mapData");
     } catch (error) {
       console.error(
         `[${this.serviceName}] Error invalidating dots cache:`,
@@ -1197,7 +1342,7 @@ export class RedisManager {
 
       // Инвалидируем кэш эндпоинта dots_meshcore для быстрого обновления данных
       try {
-        await this.redis.del("dots_meshcore_cache");
+        await this.redis.del("dots_meshcore_cache", "dots_meshcore_cache:count");
       } catch (cacheError) {
         // Игнорируем ошибки инвалидации кэша
         console.log(`⚠️ [${this.serviceName}] Не удалось инвалидировать кэш: ${cacheError.message}`);

@@ -1,7 +1,9 @@
 FROM node:20-alpine
 
-# Устанавливаем переменные окружения для оптимизации памяти
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+# Лимит heap задаётся один раз в CMD (см. ниже).
+# ВАЖНО: он должен быть заметно ниже mem_limit контейнера (2g),
+# иначе V8 успевает упереться в свой лимит и процесс падает с
+# "Reached heap limit Allocation failed"
 ENV PORT=3000
 
 # Создаем пользователя для безопасности
@@ -37,5 +39,10 @@ USER meshtastic
 # Открываем порт
 EXPOSE 3000
 
+# Проверка живости: контейнер помечается unhealthy, если API перестал отвечать
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
+
 # Запускаем приложение
-CMD ["node", "--max-old-space-size=2048", "--optimize-for-size", "src/index.mjs"]
+# 1024 МБ heap при mem_limit 2g оставляет запас на буферы, сокеты и RSS-оверхед
+CMD ["node", "--max-old-space-size=1024", "--optimize-for-size", "src/index.mjs"]

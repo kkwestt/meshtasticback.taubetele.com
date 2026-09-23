@@ -74,9 +74,12 @@ export class RedisManager {
    * @param {number} batchSize - Размер батча для SCAN
    * @returns {Promise<Array>} - Массив найденных ключей
    */
-  async _scanKeys(pattern, batchSize = 100) {
+  async _scanKeys(pattern, batchSize = 500, maxKeys = 200000) {
     const keys = [];
-    let cursor = 0;
+    // ВАЖНО: Redis возвращает курсор строкой ("0" в конце обхода).
+    // Сравнение с числом 0 давало бесконечный цикл с бесконечным
+    // ростом массива keys — это приводило к OOM процесса.
+    let cursor = "0";
 
     do {
       const [newCursor, foundKeys] = await this.redis.scan(
@@ -86,9 +89,19 @@ export class RedisManager {
         "COUNT",
         batchSize
       );
-      cursor = newCursor;
-      keys.push(...foundKeys);
-    } while (cursor !== 0);
+      cursor = String(newCursor);
+
+      for (const key of foundKeys) {
+        keys.push(key);
+      }
+
+      if (keys.length >= maxKeys) {
+        console.warn(
+          `[${this.serviceName}] SCAN ${pattern}: достигнут лимит ${maxKeys} ключей, обход прерван`
+        );
+        break;
+      }
+    } while (cursor !== "0");
 
     return keys;
   }
@@ -530,8 +543,8 @@ export class RedisManager {
   async createDeviceIndex() {
     try {
       const deviceIds = [];
-      let cursor = 0;
-      const batchSize = 100;
+      let cursor = "0";
+      const batchSize = 500;
 
       do {
         const [newCursor, keys] = await this.redis.scan(
@@ -541,7 +554,7 @@ export class RedisManager {
           "COUNT",
           batchSize
         );
-        cursor = newCursor;
+        cursor = String(newCursor);
 
         if (keys.length > 0) {
           // Извлекаем ID устройств из ключей
@@ -552,7 +565,7 @@ export class RedisManager {
             }
           });
         }
-      } while (cursor !== 0);
+      } while (cursor !== "0");
 
       // Сохраняем индекс в Redis SET для быстрого доступа
       if (deviceIds.length > 0) {

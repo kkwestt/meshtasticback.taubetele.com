@@ -501,9 +501,12 @@ export class RedisManager {
   /**
    * Использует SCAN вместо keys() для безопасного поиска ключей
    */
-  async _scanKeys(pattern, batchSize = 100) {
+  async _scanKeys(pattern, batchSize = 500, maxKeys = 200000) {
     const keys = [];
-    let cursor = 0;
+    // ВАЖНО: Redis возвращает курсор строкой ("0" в конце обхода).
+    // Сравнение с числом 0 давало бесконечный цикл с бесконечным
+    // ростом массива keys — это приводило к OOM процесса.
+    let cursor = "0";
 
     do {
       const [newCursor, foundKeys] = await this.redis.scan(
@@ -513,9 +516,19 @@ export class RedisManager {
         "COUNT",
         batchSize
       );
-      cursor = newCursor;
-      keys.push(...foundKeys);
-    } while (cursor !== 0);
+      cursor = String(newCursor);
+
+      for (const key of foundKeys) {
+        keys.push(key);
+      }
+
+      if (keys.length >= maxKeys) {
+        console.warn(
+          `[${this.serviceName}] SCAN ${pattern}: достигнут лимит ${maxKeys} ключей, обход прерван`
+        );
+        break;
+      }
+    } while (cursor !== "0");
 
     return keys;
   }
@@ -1151,7 +1164,7 @@ export class RedisManager {
 
       // Инвалидируем кэш эндпоинта dots_meshcore для быстрого обновления данных
       try {
-        await this.redis.del("dots_meshcore_cache");
+        await this.redis.del("dots_meshcore_cache", "dots_meshcore_cache:count");
       } catch (cacheError) {
         // Игнорируем ошибки инвалидации кэша
         console.log(`⚠️ [${this.serviceName}] Не удалось инвалидировать кэш: ${cacheError.message}`);

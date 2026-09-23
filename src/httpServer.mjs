@@ -21,8 +21,13 @@ export class HTTPServer {
    * Настраивает middleware
    */
   setupMiddleware() {
+    // Ограничиваем количество одновременно обрабатываемых запросов:
+    // при всплеске трафика ответы (в т.ч. gzip-буферы) не должны
+    // накапливаться в heap без предела
+    this.app.use(this.concurrencyLimiter());
+
     this.app.use(compression());
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: "100kb" }));
     this.app.use(express.urlencoded({ extended: true }));
     this.app.use(
       cors({
@@ -44,6 +49,32 @@ export class HTTPServer {
 
     //   next();
     // });
+  }
+
+  /**
+   * Middleware: ограничение числа одновременных запросов.
+   * Лишние запросы получают 503 вместо того, чтобы копиться в памяти.
+   */
+  concurrencyLimiter() {
+    const maxConcurrent = Number(process.env.MAX_CONCURRENT_REQUESTS) || 50;
+    let inFlight = 0;
+
+    return (req, res, next) => {
+      if (inFlight >= maxConcurrent) {
+        res.set("Retry-After", "2");
+        return res.status(503).json({
+          error: "Service busy",
+          message: "Too many concurrent requests, try again shortly",
+        });
+      }
+
+      inFlight++;
+      res.on("close", () => {
+        inFlight--;
+      });
+
+      next();
+    };
   }
 
   /**
@@ -280,26 +311,23 @@ export class HTTPServer {
     try {
       const startTime = Date.now();
 
-      // Получаем только необходимые поля для карты
-      const dots = await this.redisManager.getOptimizedDotData();
-      const deviceCount = Object.keys(dots).length;
+      // Получаем только необходимые поля для карты (уже в виде JSON-строки)
+      const { json, count } = await this.redisManager.getOptimizedDotDataJSON();
       const responseTime = Date.now() - startTime;
 
       // Добавляем заголовки кэширования
       res.set({
         "Cache-Control": "public, max-age=30", // Кэшируем на 30 секунд
         "Content-Type": "application/json",
-        "X-Device-Count": deviceCount,
+        "X-Device-Count": count,
         "X-Response-Time": `${responseTime}ms`,
       });
 
-      // Отправляем оптимизированные данные
-      res.json({
-        data: dots,
-        timestamp: Date.now(),
-        response_time_ms: responseTime,
-        device_count: deviceCount,
-      });
+      // Собираем ответ конкатенацией: без JSON.parse/JSON.stringify
+      // большого объекта на каждый запрос
+      res.send(
+        `{"data":${json},"timestamp":${Date.now()},"response_time_ms":${responseTime},"device_count":${count}}`
+      );
     } catch (error) {
       handleEndpointError(error, res, "Dots endpoint");
     }
@@ -314,31 +342,23 @@ export class HTTPServer {
     try {
       const startTime = Date.now();
 
-      // Получаем данные для карты в минимальном формате
-      const mapData = await this.redisManager.getMapData();
+      // Получаем данные для карты в минимальном формате (JSON-строка)
+      const { json, count } = await this.redisManager.getMapDataJSON();
 
       const responseTime = Date.now() - startTime;
-      console.log(
-        `🗺️ Map response time: ${responseTime}ms, devices: ${
-          Object.keys(mapData).length
-        }`
-      );
 
       // Добавляем заголовки кэширования и сжатия
       res.set({
         "Cache-Control": "no-cache",
         "Content-Type": "application/json",
         "X-Response-Time": `${responseTime}ms`,
-        "X-Device-Count": Object.keys(mapData).length,
+        "X-Device-Count": count,
       });
 
       // Отправляем данные карты в минимальном формате
-      res.json({
-        data: mapData,
-        timestamp: Date.now(),
-        response_time_ms: responseTime,
-        device_count: Object.keys(mapData).length,
-      });
+      res.send(
+        `{"data":${json},"timestamp":${Date.now()},"response_time_ms":${responseTime},"device_count":${count}}`
+      );
     } catch (error) {
       handleEndpointError(error, res, "Map endpoint");
     }
@@ -389,46 +409,12 @@ export class HTTPServer {
     try {
       const startTime = Date.now();
       const pattern = "dots_meshcore:*";
-      
-      // Проверяем кэш Redis (кэшируем на 30 секунд, как в /dots)
-      const cacheKey = "dots_meshcore_cache";
-      const cached = await this.redisManager.redis.get(cacheKey);
-      
-      if (cached) {
-        const cachedData = JSON.parse(cached);
-        const responseTime = Date.now() - startTime;
-        
-        // Добавляем заголовки кэширования
-        res.set({
-          "Cache-Control": "public, max-age=30",
-          "Content-Type": "application/json",
-          "X-Device-Count": cachedData.device_count,
-          "X-Response-Time": `${responseTime}ms`,
-          "X-Cached": "true",
-        });
-        
-        res.json({
-          ...cachedData,
-          timestamp: Date.now(),
-          response_time_ms: responseTime,
-        });
-        return;
-      }
-      
-      const result = {};
-      
-      // Используем SCAN для поиска всех ключей по паттерну
-      const stream = this.redisManager.redis.scanStream({
-        match: pattern,
-        count: 100,
-      });
 
-      const keys = [];
-      for await (const keyBatch of stream) {
-        keys.push(...keyBatch);
-      }
+      // Данные и кэш (память -> Redis -> SCAN) живут в RedisManager,
+      // сюда приходит уже готовая JSON-строка
+      const { json, count } = await this.redisManager.getMeshcoreDotsJSON();
 
-      if (keys.length === 0) {
+      if (count === 0) {
         return res.status(404).json({
           error: "Data not found",
           pattern: pattern,
@@ -436,68 +422,18 @@ export class HTTPServer {
         });
       }
 
-      // Получаем данные из всех найденных ключей
-      const pipeline = this.redisManager.redis.pipeline();
-      keys.forEach((key) => {
-        pipeline.hgetall(key);
-      });
-
-      const results = await pipeline.exec();
-      
-      // Обрабатываем результаты и формируем объект
-      results.forEach(([err, hashData], index) => {
-        if (!err && hashData && Object.keys(hashData).length > 0) {
-          const key = keys[index];
-          // Извлекаем deviceId из ключа (dots_meshcore:deviceId)
-          const deviceId = key.replace("dots_meshcore:", "");
-          
-          // Парсим данные из hash
-          const parsedData = {};
-          for (const [field, value] of Object.entries(hashData)) {
-            try {
-              // Пытаемся распарсить как JSON
-              parsedData[field] = JSON.parse(value);
-            } catch {
-              // Для координат: пустые строки и "0" преобразуем в null для согласованности
-              if ((field === "lat" || field === "lon") && (value === "" || value === "0")) {
-                parsedData[field] = null;
-              } else if (!isNaN(value) && value !== "") {
-                // Если не JSON и не пустая строка, пытаемся преобразовать в число
-                parsedData[field] = Number(value);
-              } else {
-                parsedData[field] = value;
-              }
-            }
-          }
-          
-          result[deviceId] = parsedData;
-        }
-      });
-
-      const deviceCount = Object.keys(result).length;
       const responseTime = Date.now() - startTime;
-      
-      const responseData = {
-        pattern: pattern,
-        timestamp: Date.now(),
-        device_count: deviceCount,
-        data: result,
-        response_time_ms: responseTime,
-      };
 
-      // Кэшируем результат на 30 секунд
-      await this.redisManager.redis.setex(cacheKey, 30, JSON.stringify(responseData));
-
-      // Добавляем заголовки кэширования
       res.set({
         "Cache-Control": "public, max-age=30",
         "Content-Type": "application/json",
-        "X-Device-Count": deviceCount,
+        "X-Device-Count": count,
         "X-Response-Time": `${responseTime}ms`,
-        "X-Cached": "false",
       });
 
-      res.json(responseData);
+      res.send(
+        `{"pattern":"${pattern}","timestamp":${Date.now()},"device_count":${count},"data":${json},"response_time_ms":${responseTime}}`
+      );
     } catch (error) {
       handleEndpointError(error, res, "Dots meshcore endpoint");
     }
@@ -771,6 +707,15 @@ export class HTTPServer {
     const PORT = this.serverConfig.port || 80;
 
     this.server = this.app.listen(PORT, () => {
+      // Ограничиваем время жизни соединений и их количество,
+      // чтобы зависшие клиенты не удерживали буферы в памяти
+      this.server.keepAliveTimeout = 30000;
+      this.server.headersTimeout = 35000;
+      this.server.requestTimeout = 60000;
+      this.server.maxConnections =
+        Number(process.env.MAX_CONNECTIONS) || 512;
+
+
       console.log(`🌐 HTTP Server running on port ${PORT}`);
       console.log(`📡 Available endpoints:`);
       console.log(`  ДАННЫЕ:`);

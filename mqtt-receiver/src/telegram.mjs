@@ -1402,16 +1402,44 @@ const sendGroupedMessage = async (redis, messageId) => {
   }
 };
 
+// Parse target of form "-1001907680082" or "-1001907680082_12" (chatId_threadId)
+const parseChannelTarget = (target) => {
+  const raw = String(target ?? "");
+  const separatorIndex = raw.lastIndexOf("_");
+
+  if (separatorIndex === -1) {
+    return { chatId: raw, threadId: null };
+  }
+
+  const chatId = raw.substring(0, separatorIndex);
+  const threadId = parseInt(raw.substring(separatorIndex + 1), 10);
+
+  if (!chatId || Number.isNaN(threadId) || threadId <= 0) {
+    return { chatId: raw, threadId: null };
+  }
+
+  return { chatId, threadId };
+};
+
 // Send message to Telegram with error handling
 const sendTelegramMessage = async (message, channelId) => {
   if (!bot || !botSettings.ENABLE) return;
 
+  const { chatId, threadId } = parseChannelTarget(
+    channelId || botSettings.MAIN_CHANNEL_ID
+  );
+  const threadOptions = threadId ? { message_thread_id: threadId } : {};
+
   try {
-    const targetChannelId = channelId || botSettings.MAIN_CHANNEL_ID;
-    console.log(`📨 Sending message to Telegram channel ${targetChannelId}`);
-    await bot.telegram.sendMessage(targetChannelId, message, {
+    console.log(
+      `📨 Sending message to Telegram channel ${chatId}${
+        threadId ? ` (thread ${threadId})` : ""
+      }`
+    );
+    await bot.telegram.sendMessage(chatId, message, {
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      ...threadOptions,
     });
     console.log(`✅ Message sent to Telegram successfully`);
   } catch (error) {
@@ -1424,11 +1452,10 @@ const sendTelegramMessage = async (message, channelId) => {
     );
     // Fallback: send without formatting
     try {
-      await bot.telegram.sendMessage(
-        channelId || botSettings.MAIN_CHANNEL_ID,
-        message.replace(/<[^>]*>/g, ""),
-        { disable_web_page_preview: true }
-      );
+      await bot.telegram.sendMessage(chatId, message.replace(/<[^>]*>/g, ""), {
+        disable_web_page_preview: true,
+        ...threadOptions,
+      });
     } catch (fallbackError) {
       console.error(
         "Error sending fallback telegram message:",

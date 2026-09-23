@@ -1,4 +1,5 @@
 // Импортируем модули для HTTP API и Telegram
+import v8 from "node:v8";
 import { redisConfig, serverConfig, adminConfig } from "../config.mjs";
 import { RedisManager } from "./shared/redisManager.mjs";
 import { HTTPServer } from "./httpServer.mjs";
@@ -24,8 +25,26 @@ class MeshtasticApiService {
   startPerformanceMonitoring() {
     this.performanceInterval = setInterval(() => {
       const uptime = Date.now() - this.stats.startTime;
+      const mem = process.memoryUsage();
+      const mb = (bytes) => Math.round(bytes / 1024 / 1024);
+      const heapLimitMb = mb(v8.getHeapStatistics().heap_size_limit);
+      const heapUsedMb = mb(mem.heapUsed);
+      const heapPercent = Math.round((heapUsedMb / heapLimitMb) * 100);
 
-      console.log(`📊 [HTTP-API] Работает ${Math.round(uptime / 1000)}с`);
+      console.log(
+        `📊 [HTTP-API] Работает ${Math.round(
+          uptime / 1000
+        )}с | heap ${heapUsedMb}/${heapLimitMb} МБ (${heapPercent}%) | rss ${mb(
+          mem.rss
+        )} МБ | external ${mb(mem.external)} МБ`
+      );
+
+      // Ранний сигнал о приближении к лимиту heap (до фатального OOM)
+      if (heapPercent >= 85) {
+        console.warn(
+          `⚠️ [HTTP-API] Heap заполнен на ${heapPercent}% — приближение к лимиту V8`
+        );
+      }
     }, 60000); // Каждую минуту для API сервиса
   }
 

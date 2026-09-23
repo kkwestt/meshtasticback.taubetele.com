@@ -3,6 +3,8 @@
 
 // Telegram Bot configuration
 const BOT_TOKEN = process.env.BOT_TOKEN || "YOUR_BOT_TOKEN_HERE"; // Получите токен у @BotFather
+// Формат: "<chatId>" или "<chatId>_<threadId>" для темы форума
+// threadId берётся из ссылки на тему: t.me/c/<id>/<threadId>/<msgId>
 const MAIN_CHANNEL_ID = ""; // ID основного канала/группы
 const KALININGRAD_CHANNEL_ID = ""; // ID канала Калининграда (опционально)
 const UFA_CHANNEL_ID = ""; // ID канала Уфы (опционально)

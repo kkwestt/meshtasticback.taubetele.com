@@ -70,8 +70,11 @@ services:
       - PORT=3000
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # Ограничиваем память для Node.js до 1GB
-      - NODE_OPTIONS=--max-old-space-size=1600
+      # Лимит heap задаётся флагом в CMD образа (1024 МБ).
+      # NODE_OPTIONS здесь намеренно не задаём, чтобы не было
+      # двух конфликтующих значений.
+      # Максимум одновременно обрабатываемых HTTP-запросов
+      - MAX_CONCURRENT_REQUESTS=50
     # Ограничиваем ресурсы контейнера
     mem_limit: 2g
     mem_reservation: 512m

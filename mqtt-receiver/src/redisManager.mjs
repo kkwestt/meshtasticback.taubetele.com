@@ -586,7 +586,7 @@ export class RedisManager {
 
       // Инвалидируем кэш эндпоинта dots_meshcore для быстрого обновления данных
       try {
-        await this.redis.del("dots_meshcore_cache");
+        await this.redis.del("dots_meshcore_cache", "dots_meshcore_cache:count");
       } catch (cacheError) {
         // Игнорируем ошибки инвалидации кэша
         console.log(`⚠️ [MQTT-Receiver] Не удалось инвалидировать кэш: ${cacheError.message}`);
