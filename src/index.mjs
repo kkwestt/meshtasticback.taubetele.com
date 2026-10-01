@@ -1,6 +1,6 @@
 // Импортируем модули для HTTP API и Telegram
 import v8 from "node:v8";
-import { redisConfig, serverConfig, adminConfig } from "../config.mjs";
+import { redisConfig, serverConfig } from "../config.mjs";
 import { RedisManager } from "./shared/redisManager.mjs";
 import { HTTPServer } from "./httpServer.mjs";
 
@@ -212,20 +212,6 @@ async function main() {
 
   // Запускаем сервис
   await service.init();
-
-  // Отправляем сообщение о запуске сервера администратору
-  try {
-    const startupMessage =
-      `🚀 [HTTP-API] ` +
-      `${new Date().toLocaleString("ru-RU", {
-        timeZone: "Europe/Moscow",
-      })}\n`;
-  } catch (error) {
-    console.error(
-      "❌ [HTTP-API] Ошибка отправки сообщения о запуске:",
-      error.message
-    );
-  }
 }
 
 // Запускаем только если файл запущен напрямую

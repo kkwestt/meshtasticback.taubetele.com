@@ -7,17 +7,22 @@ meshtasticback.taubetele.com/
 ├── src/                           # HTTP API сервис исходники
 │   ├── index.mjs                  # Главный файл HTTP API
 │   ├── httpServer.mjs             # HTTP сервер
-│   ├── redisManager.mjs           # Redis менеджер (только чтение)
-│   ├── telegram.mjs               # Telegram бот
 │   ├── utils.mjs                  # Утилиты
-│   └── protobufDecoder.mjs        # Декодер protobuf
+│   └── shared/
+│       ├── redisManager.mjs       # Redis менеджер (чтение данных)
+│       └── validators.mjs         # Валидация имён устройств
 ├── mqtt-receiver/                 # MQTT Receiver сервис
 │   ├── src/                       # MQTT сервис исходники
 │   │   ├── index.mjs              # Главный файл MQTT Receiver
 │   │   ├── mqtt.mjs               # MQTT менеджер
-│   │   ├── redisManager.mjs       # Redis менеджер (только запись)
+│   │   ├── telegram.mjs           # Telegram бот
+│   │   ├── meshcoreParser.mjs     # Разбор meshcore-пакетов
 │   │   ├── utils.mjs              # Утилиты
-│   │   └── protobufDecoder.mjs    # Декодер protobuf
+│   │   ├── protobufDecoder.mjs    # Декодер protobuf
+│   │   └── shared/
+│   │       ├── redisManager.mjs   # Redis менеджер (чтение и запись)
+│   │       ├── messageQueue.mjs   # Очередь обработки сообщений
+│   │       └── validators.mjs     # Валидаторы
 │   ├── Dockerfile                 # Docker для MQTT сервиса
 │   ├── package.json               # Зависимости MQTT сервиса
 │   └── index.mjs                  # Точка входа (импортирует src/index.mjs)
@@ -96,24 +101,27 @@ docker-compose up meshtasticback_taubetele_com_81
 
 ### `/src/` (HTTP API сервис)
 
-| Файл                  | Назначение                     |
-| --------------------- | ------------------------------ |
-| `index.mjs`           | Главный класс HTTP API сервиса |
-| `httpServer.mjs`      | Express HTTP сервер            |
-| `redisManager.mjs`    | Чтение данных из Redis         |
-| `telegram.mjs`        | Telegram бот логика            |
-| `utils.mjs`           | Общие утилиты                  |
-| `protobufDecoder.mjs` | Декодирование protobuf         |
+| Файл                      | Назначение                     |
+| ------------------------- | ------------------------------ |
+| `index.mjs`               | Главный класс HTTP API сервиса |
+| `httpServer.mjs`          | Express HTTP сервер            |
+| `shared/redisManager.mjs` | Чтение данных из Redis         |
+| `shared/validators.mjs`   | Валидация имён устройств       |
+| `utils.mjs`               | Общие утилиты                  |
 
 ### `/mqtt-receiver/src/` (MQTT Receiver сервис)
 
-| Файл                  | Назначение                     |
-| --------------------- | ------------------------------ |
-| `index.mjs`           | Главный класс MQTT Receiver    |
-| `mqtt.mjs`            | MQTT клиент и обработка        |
-| `redisManager.mjs`    | Запись данных в Redis          |
-| `utils.mjs`           | Общие утилиты (копия)          |
-| `protobufDecoder.mjs` | Декодирование protobuf (копия) |
+| Файл                      | Назначение                       |
+| ------------------------- | -------------------------------- |
+| `index.mjs`               | Главный класс MQTT Receiver      |
+| `mqtt.mjs`                | MQTT клиент и обработка          |
+| `telegram.mjs`            | Telegram бот логика              |
+| `meshcoreParser.mjs`      | Разбор meshcore-пакетов          |
+| `shared/redisManager.mjs` | Чтение и запись данных в Redis   |
+| `shared/messageQueue.mjs` | Очередь обработки сообщений      |
+| `shared/validators.mjs`   | Валидаторы                       |
+| `utils.mjs`               | Общие утилиты (копия)            |
+| `protobufDecoder.mjs`     | Декодирование protobuf           |
 
 ## 🔄 Импорты между файлами
 
@@ -121,8 +129,8 @@ docker-compose up meshtasticback_taubetele_com_81
 
 ```javascript
 // Импорты внутри одной src директории
-import { RedisManager } from "./redisManager.mjs";
-import { utils } from "./utils.mjs";
+import { RedisManager } from "./shared/redisManager.mjs";
+import { handleEndpointError } from "./utils.mjs";
 ```
 
 ### Из src в корневые файлы

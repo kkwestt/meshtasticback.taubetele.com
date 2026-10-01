@@ -38,3 +38,13 @@ export const serverConfig = {
 export const adminConfig = {
   password: ADMIN_PASSWORD,
 };
+
+// Приём meshcore-устройств от компонента Home Assistant (POST /api/meshcore/dots).
+// Пустой токен — приём выключен. Тот же токен вводится в настройках компонента.
+export const meshcoreIngestConfig = {
+  token: process.env.MESHCORE_INGEST_TOKEN || "",
+  // Минимальное время жизни ключа dots_meshcore:* (секунды), чтобы карта
+  // могла показать «был давно», а не терять устройство
+  ttlSeconds: Number(process.env.MESHCORE_INGEST_TTL) || 30 * 24 * 60 * 60,
+  maxNodes: 1000,
+};

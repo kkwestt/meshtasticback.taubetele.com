@@ -2,7 +2,54 @@ import express from "express";
 import compression from "compression";
 import cors from "cors";
 import { handleEndpointError } from "./utils.mjs";
-import { adminConfig } from "../config.mjs";
+import { timingSafeEqual } from "node:crypto";
+import { adminConfig, meshcoreIngestConfig } from "../config.mjs";
+
+const PUBLIC_KEY_RE = /^[0-9A-F]{64}$/;
+
+/**
+ * Проверяет одно устройство из запроса /api/meshcore/dots.
+ * Возвращает нормализованный объект или null, если устройство не годится.
+ * @param {Object} node - устройство как прислал клиент
+ * @param {number} now - текущее время сервера, мс
+ */
+function parseMeshcoreNode(node, now) {
+  if (!node || typeof node !== "object") return null;
+
+  const publicKey = String(node.public_key || "").trim().toUpperCase();
+  if (!PUBLIC_KEY_RE.test(publicKey)) return null;
+
+  const name = String(node.name || "")
+    .replace(/[\u0000-\u001f]/g, "")
+    .trim()
+    .slice(0, 64);
+
+  // 0,0 — это «нет GPS», а не координаты в океане
+  let lat = Number(node.lat);
+  let lon = Number(node.lon);
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    Math.abs(lat) > 90 ||
+    Math.abs(lon) > 180 ||
+    (lat === 0 && lon === 0)
+  ) {
+    lat = null;
+    lon = null;
+  }
+
+  // Время из будущего (сбитые часы) считаем «сейчас», мусор — неизвестным
+  let heardAt = Math.round(Number(node.heard_at) * 1000);
+  if (!Number.isFinite(heardAt) || heardAt < Date.UTC(2020, 0, 1)) {
+    heardAt = null;
+  } else if (heardAt > now) {
+    heardAt = now;
+  }
+
+  const type = Number.isInteger(node.type) ? node.type : null;
+
+  return { public_key: publicKey, name, lat, lon, heard_at: heardAt, type };
+}
 
 /**
  * Оптимизированный HTTP сервер (только новая схема)
@@ -32,23 +79,9 @@ export class HTTPServer {
     this.app.use(
       cors({
         origin: (origin, callback) => callback(null, origin || "*"),
-        allowedHeaders: ["Content-Type"],
+        allowedHeaders: ["Content-Type", "Authorization"],
       })
     );
-
-    // Добавляем middleware для логирования
-    // this.app.use((req, res, next) => {
-    //   const start = Date.now();
-
-    //   res.on("finish", () => {
-    //     const duration = Date.now() - start;
-    //     console.log(
-    //       `${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`
-    //     );
-    //   });
-
-    //   next();
-    // });
   }
 
   /**
@@ -84,6 +117,12 @@ export class HTTPServer {
     // Админ панель для удаления данных
     this.app.get("/admin", this.handleAdminPage.bind(this));
     this.app.post("/api/delete", this.handleDeleteDevice.bind(this));
+
+    // Приём meshcore-устройств от компонента Home Assistant (meshcore_chat)
+    this.app.post(
+      "/api/meshcore/dots",
+      this.handleMeshcoreIngest.bind(this)
+    );
 
     // Основные endpoints
     this.app.get("/health", this.handleHealthCheck.bind(this));
@@ -149,9 +188,7 @@ export class HTTPServer {
             "/map": "Map data in minimal format (fastest)",
             "/dots/:deviceId": "Map data for specific device",
             "/dots_meshcore": "Data from Redis key dots_meshcore",
-            "/portnum/:portnumName": "All messages by portnum type",
-            "/portnum/:portnumName/:deviceId":
-              "Device messages by portnum type",
+            "POST /api/meshcore/dots": "Meshcore nodes from Home Assistant (Bearer token)",
             "/:portnumName::deviceId": "Device messages (colon format)",
           },
           system: {
@@ -178,8 +215,6 @@ export class HTTPServer {
           get_all_dots: "/dots",
           get_map_data: "/map",
           get_device_dot: "/dots/123456789",
-          get_position_messages: "/portnum/POSITION_APP",
-          get_device_positions: "/portnum/POSITION_APP/123456789",
           get_device_telemetry: "/TELEMETRY_APP:123456789",
         },
       });
@@ -284,21 +319,6 @@ export class HTTPServer {
         res,
         `Portnum colon format endpoint (${req.params.portnumNameAndDeviceId})`
       );
-    }
-  }
-
-  /**
-   * Обрабатывает /nodes endpoint - возвращает список всех устройств
-   * @param {Request} req - Express request
-   * @param {Response} res - Express response
-   */
-  async handleNodesEndpoint(req, res) {
-    try {
-      const nodes = await this.buildNodesResponse();
-
-      res.json(nodes);
-    } catch (error) {
-      handleEndpointError(error, res, "Nodes endpoint");
     }
   }
 
@@ -619,6 +639,69 @@ export class HTTPServer {
   }
 
   /**
+   * Принимает meshcore-устройства от Home Assistant и пишет их в dots_meshcore:*
+   *
+   * Заголовок: Authorization: Bearer <MESHCORE_INGEST_TOKEN>
+   * Тело: {source: "имя ноды", nodes: [{public_key, name, lat, lon, heard_at, type}]}
+   *   heard_at — когда устройство последний раз было в эфире, unix-время в секундах
+   * @param {Request} req - Express request
+   * @param {Response} res - Express response
+   */
+  async handleMeshcoreIngest(req, res) {
+    try {
+      const token = meshcoreIngestConfig?.token || "";
+      if (!token) {
+        return res.status(503).json({ error: "Meshcore ingest is disabled" });
+      }
+
+      const header = String(req.get("Authorization") || "");
+      const given = Buffer.from(header.replace(/^Bearer\s+/i, ""));
+      const expected = Buffer.from(token);
+      if (
+        given.length !== expected.length ||
+        !timingSafeEqual(given, expected)
+      ) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+
+      const { source, nodes } = req.body || {};
+      if (!Array.isArray(nodes)) {
+        return res.status(400).json({ error: "nodes must be an array" });
+      }
+      const maxNodes = meshcoreIngestConfig.maxNodes || 1000;
+      if (nodes.length > maxNodes) {
+        return res
+          .status(413)
+          .json({ error: `At most ${maxNodes} nodes per request` });
+      }
+
+      const now = Date.now();
+      const valid = [];
+      for (const node of nodes) {
+        const parsed = parseMeshcoreNode(node, now);
+        if (parsed) valid.push(parsed);
+      }
+
+      const sourceName =
+        String(source || "home_assistant").trim().slice(0, 64) ||
+        "home_assistant";
+      const saved = await this.redisManager.saveMeshcoreDots(
+        valid,
+        sourceName,
+        meshcoreIngestConfig.ttlSeconds || 30 * 24 * 60 * 60
+      );
+
+      res.json({
+        saved,
+        skipped: nodes.length - valid.length,
+        timestamp: now,
+      });
+    } catch (error) {
+      handleEndpointError(error, res, "Meshcore ingest endpoint");
+    }
+  }
+
+  /**
    * Обрабатывает API запрос на удаление данных устройства
    * @param {Request} req - Express request
    * @param {Response} res - Express response
@@ -693,7 +776,7 @@ export class HTTPServer {
       message: `Endpoint ${req.method} ${req.path} not found`,
       timestamp: Date.now(),
       available_endpoints: {
-        data: ["/dots", "/portnum/:type/:deviceId"],
+        data: ["/dots", "/map", "/dots/:deviceId", "/dots_meshcore", "/:type::deviceId"],
         system: ["/health", "/stats"],
         admin: ["/admin"],
       },
@@ -731,12 +814,12 @@ export class HTTPServer {
       console.log(
         `    GET /dots_meshcore           - Data from Redis key dots_meshcore`
       );
-      console.log(`    GET /nodes                   - List of all devices`);
       console.log(`  СИСТЕМА:`);
       console.log(`    GET /health                  - Health check`);
       console.log(`    GET /stats                   - Server statistics`);
       console.log(`    GET /admin                   - Admin panel`);
       console.log(`    POST /api/delete             - Delete device data`);
+      console.log(`    POST /api/meshcore/dots      - Meshcore nodes from Home Assistant`);
       console.log(`  `);
     });
 
