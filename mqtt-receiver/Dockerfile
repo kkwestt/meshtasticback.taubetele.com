@@ -14,9 +14,9 @@ RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install
 COPY mqtt-receiver/src/ ./src/
 COPY mqtt-receiver/config.mjs ./
 
-# Копируем общие модули из корня проекта (нужны для shared модулей)
-# Примечание: src/utils.mjs не копируем, используем локальный из mqtt-receiver/src/utils.mjs
-COPY src/shared/ ./src/shared/
+# src/shared/ из корня НЕ копируем: там урезанные модули HTTP API
+# (без isValidPacket, saveMeshcoreDot и т.д.). У mqtt-receiver свой
+# полный набор в mqtt-receiver/src/shared/, он уже скопирован выше.
 
 # Копируем protobufs из родительского контекста
 COPY protobufs ./protobufs
